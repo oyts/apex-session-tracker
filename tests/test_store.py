@@ -198,3 +198,14 @@ def test_ambiguous_small_roster_never_auto_assigns(store):
         store.bind_alias('示例缺□', 1)
         store.bind_alias('示例缺□', 2)
     assert auto_rows(result(), store, [1]) is None
+
+def test_session_title_works_with_c_time_locale(store):
+    import locale
+    previous=locale.setlocale(locale.LC_TIME)
+    try:
+        locale.setlocale(locale.LC_TIME,'C')
+        sid=store.start_session(mode=3)
+        title=next(s['title'] for s in store.sessions() if s['id']==sid)
+        assert '月' in title and '日' in title and title.endswith('3人统计')
+    finally:
+        locale.setlocale(locale.LC_TIME,previous)

@@ -1,6 +1,7 @@
 import ctypes
 import queue
 import sys
+import os
 
 import pytest
 from PIL import ImageGrab
@@ -9,7 +10,8 @@ from tracker.windows import Hotkey, enable_dpi, monitors
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows system APIs")
-def test_system_capture_and_registered_message_loop():
+@pytest.mark.skipif(os.environ.get('APEX_RUN_DESKTOP_TESTS')!='1', reason='Opt-in interactive Windows desktop capture')
+def test_system_capture():
     enable_dpi()
     displays = monitors()
     assert displays and displays[0]["primary"]
@@ -17,6 +19,10 @@ def test_system_capture_and_registered_message_loop():
     image = ImageGrab.grab(bbox=bbox, all_screens=True)
     assert image.size == (bbox[2]-bbox[0], bbox[3]-bbox[1])
     assert image.getbbox() is not None
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows system APIs")
+def test_registered_message_loop():
     events = queue.Queue()
     # A user may be running the real Ctrl+End tracker while this test executes.
     key='Ctrl+Alt+Shift+F24'

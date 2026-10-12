@@ -57,3 +57,5 @@ $env:RUN_OCR_TESTS='1'
 本项目拥有独立Git仓库，远端为 `git@github.com:oyts/apex-session-tracker.git`。每次完成更新后，检查变更和私有资料排除项，运行适当验证，提交并推送；确认本地与远端HEAD一致并检查GitHub Actions。维护规则也保存于AGENTS.md。不要使用父目录仓库提交本项目，不要强制推送。
 
 `requirements-lock.txt`记录已验证开发环境的完整版本，可用于重现构建；`requirements.txt`为运行时直接依赖。
+
+系统屏幕截图测试需要交互桌面和屏幕捕获权限，默认跳过。确认当前桌面适合测试时设置 `$env:APEX_RUN_DESKTOP_TESTS='1'` 再运行测试；CI不把规则回归冒充真实屏幕捕获。快捷键注册与消息循环测试仍单独执行。

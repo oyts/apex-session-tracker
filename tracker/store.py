@@ -257,9 +257,12 @@ class Store:
         if (player_ids and len(player_ids) != mode) or len(set(player_ids)) != len(player_ids) or not set(player_ids) <= {1, 2, 3}:
             raise ValueError("请选择 1–3 个不同玩家。")
         timestamp = now()
+        moment=datetime.now()
+        title=(f'{moment.month:02d}月{moment.day:02d}日 '
+               f'{moment.hour:02d}:{moment.minute:02d} · {mode}人统计')
         with self.db:
             cursor = self.db.execute("INSERT INTO sessions(title,started,player_ids,mode) VALUES (?,?,?,?)",
-                                     (datetime.now().strftime("%m月%d日 %H:%M") + f" · {mode}人统计",
+                                     (title,
                                       timestamp, json.dumps(sorted(player_ids)), mode))
             for player in self.players():
                 if player['id'] in player_ids:
