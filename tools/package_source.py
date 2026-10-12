@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from zipfile import ZipFile,ZIP_DEFLATED
 root=Path(__file__).resolve().parents[1]
-files=[root/name for name in ('main.py','AGENTS.md','启动战绩记录器.cmd','requirements.txt','build.ps1','ApexTracker.spec','.gitignore','.gitattributes','LICENSE',
+files=[root/name for name in ('main.py','AGENTS.md','启动战绩记录器.cmd','requirements.txt','requirements-lock.txt','build.ps1','ApexTracker.spec','.gitignore','.gitattributes','LICENSE',
        'README.md','VALIDATION.md','ARCHITECTURE.md','RESEARCH.md','DEVELOPMENT.md','CONTRIBUTING.md','CHANGELOG.md','THIRD_PARTY_NOTICES.md')]
 files += list((root/'tracker').glob('*.py'))+[root/'tracker'/'summary_templates.json',root/'tracker'/'windows.manifest']
 files += list((root/'tests').glob('*.py'))

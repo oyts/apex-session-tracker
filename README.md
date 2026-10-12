@@ -1,5 +1,11 @@
 # Apex 战绩记录器
 
+[下载 Windows 测试版](https://github.com/oyts/apex-session-tracker/releases) · [报告问题](https://github.com/oyts/apex-session-tracker/issues/new/choose)
+
+[![Windows tests](https://github.com/oyts/apex-session-tracker/actions/workflows/tests.yml/badge.svg)](https://github.com/oyts/apex-session-tracker/actions/workflows/tests.yml)
+
+目前为 **v14 预发布测试版**，欢迎参与实际游戏测试；已验证内容与未覆盖模式见 [验证范围](VALIDATION.md)。下载 `ApexTracker-Windows.zip` 后解压完整文件夹，运行其中的 `ApexTracker.exe`，不需要安装 Python。
+
 Windows 本地小程序。一个人打开程序，自动捕获小队总结页，即可累计伤害、击杀、助攻与场均伤害。支持 1／2／3 人统计模式，跨局自动确定参与玩家，卡片换位不会改变统计。保留可自定义的 Ctrl+End 手动补录和图片导入。
 
 本次更新（v14）：将比赛、截图证据、OCR版本、身份与最终统计分开；识别加载／选人组合证据来开启新比赛，移除旧跳伞HUD锁。没有看到新局开始也保留总结原图，并进入明确的比赛归属审核。相同数字不参与去重。同一比赛可保留多张原图，手动校正优先，只累计一份最终数据。见 [架构说明](ARCHITECTURE.md)、[研究与覆盖范围](RESEARCH.md)、[版本说明](CHANGELOG.md)。
@@ -160,4 +166,4 @@ $env:PYTEST_DISABLE_PLUGIN_AUTOLOAD='1'
 
 ## 开源维护
 
-源码与隔离测试见 [开发指南](DEVELOPMENT.md) 和 [贡献指南](CONTRIBUTING.md)。本地原图、数据库、日志和研究图片不包含在源码包／便携包中。公开源码测试会明确跳过依赖私有样例的项目，合成核心回归照常执行。CI配置已经准备，本机隔离执行记录不等同于GitHub CI已运行。
+源码与隔离测试见 [开发指南](DEVELOPMENT.md) 和 [贡献指南](CONTRIBUTING.md)。本地原图、数据库、日志和研究图片不包含在源码包／便携包中。公开源码测试会明确跳过依赖私有样例的项目，合成核心回归照常执行。GitHub Actions在push与PR时自动执行隔离测试，实际状态以页面徽章及运行记录为准。
