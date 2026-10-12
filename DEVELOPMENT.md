@@ -39,7 +39,7 @@ $env:RUN_OCR_TESTS='1'
 .\.venv\Scripts\python.exe tools\package_release.py
 ```
 
-输出 `dist/v14/ApexTracker/ApexTracker.exe` 和 `dist/ApexTracker-Windows.zip`。README、第三方许可与依赖许可随完整文件夹交付，不能只搬exe。`tools/package_source.py` 用允许清单输出 `dist/ApexTracker-Source-v14.zip`，排除数据库、图片、日志、诊断、环境和构建产物；发布前仍需审阅文件清单及许可边界。
+输出 `dist/v14-beta1/ApexTracker/ApexTracker.exe` 和 `dist/ApexTracker-Windows.zip`。README、第三方许可与依赖许可随完整文件夹交付，不能只搬exe。`tools/package_source.py` 用允许清单输出 `dist/ApexTracker-Source-v14.zip`，排除数据库、图片、日志、诊断、环境和构建产物；发布前仍需审阅文件清单及许可边界。
 
 ## 定位问题
 
