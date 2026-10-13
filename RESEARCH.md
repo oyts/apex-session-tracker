@@ -1,5 +1,13 @@
 # 开始页研究与验证范围（2026-10-12）
 
+## Beta 4 Windows捕获提示边框（2026-10-14）
+
+[微软IsBorderRequired说明](https://learn.microsoft.com/en-us/uwp/api/windows.graphics.capture.graphicscapturesession.isborderrequired)定义捕获提示边框和系统许可要求；明确指出用户拒绝时false设置可成功但被忽略，其他捕获程序要求true时边框仍显示。不能把Python构造参数已传false写成已获得许可或系统一定移除。独立可分发便携程序没有新增MSIX能力声明或替用户批准授权；尊重系统现有许可和策略。
+
+已读取当前本地windows-capture2.0.1构造参数，并打开[库的WGC实现](https://github.com/NiiightmareXD/windows-capture/blob/main/src/graphics_capture_api.rs)确认WithoutBorder映射官方SetIsBorderRequired(false)，支持检查用于旧系统回退。当前仓库main源码是接口解释，版本依据来自本机固定2.0.1，不把未来main当固定发布源码。
+
+本机Windows build26200，在自身非激活STATIC窗口比较默认None/关闭False/显示True：同一周边ROI的黄色(255,230,64)像素分别556/0/556，三次都收到真实窗口帧、前台不变。只读本程序窗口边缘，原图和诊断为私有，不公开包含桌面背景的截图；未调用游戏API。此实测说明本机当前环境可生效，不代表所有Windows版本/权限或实际游戏完整会话。
+
 ## Beta 3 实际外卡样本（2026-10-14）
 
 用户授权正常游戏时被动读取Apex窗口，本轮保存了2560×1440中文外卡入场原图：加载页左上模式、中央倒数计时／数字、中央玩法说明，下方是活动玩法插画，没有底部小队静音；同时选人页有左上模式、左侧选择传奇／小队静音／自愿跳伞控制和下方五职业，没有Core轮流选人条。三个不同时间的选人原图均由真实模型判为selection，加载原图判为loading；缺少倒计时的过渡画面、战斗中“已获得外卡”提示、真实外卡大厅均为unknown。模式和地图、活动名称均可能变化，识别不依赖具体地图、活动插画或玩家英雄。

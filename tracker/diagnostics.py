@@ -228,8 +228,19 @@ def run_window_capture_smoke(output):
         # BLACKRECT's themed dark brush can use 3DDKSHADOW instead of WINDOWFRAME.
         assert image.getpixel((60,40)) in (system_rgb(6),system_rgb(21)),image.getpixel((60,40))
         assert image.getpixel((10,10))!=image.getpixel((60,40))
-        report.update(ok=True,own_nonactivating_window=True,actual_wgc_pixels=True,
-                      client_size=list(image.size),game_window_sampled=False,foreground_preserved=True)
+        report.update(own_nonactivating_window=True,actual_wgc_pixels=True,
+                      client_size=list(image.size),game_window_sampled=False,foreground_preserved=True,
+                      border_requested=source.border_requested)
+        # Desktop edge observation is opt-in with this own-window diagnostic;
+        # production capture never samples another surface to inspect its border.
+        from PIL import ImageGrab
+        time.sleep(.5)
+        edge=ImageGrab.grab(bbox=(40,40,220,140))
+        observed=[edge.getpixel((0,50)),edge.getpixel((90,0))]
+        report['own_window_edge_pixels']=[list(p) for p in observed]
+        report['own_window_edges_match_client']=all(p==system_rgb(5) for p in observed)
+        report['ok']=True
+        # Not an assertion: Windows policy/other capturers may retain a border.
     except Exception as error:report['error']=str(error)
     finally:
         source.close()

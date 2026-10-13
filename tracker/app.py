@@ -189,7 +189,7 @@ class App:
         self.wrapped_label(container,textvariable=self.status,foreground=TEXT).pack(fill='x',pady=(12,6))
         footer=ttk.Frame(container)
         footer.pack(fill='x')
-        ttk.Label(footer,text='本地保存 · 本地识别 · v14-beta3',style='Muted.TLabel',font=('Microsoft YaHei UI',9)).pack(side='left')
+        ttk.Label(footer,text='本地保存 · 本地识别 · v14-beta4',style='Muted.TLabel',font=('Microsoft YaHei UI',9)).pack(side='left')
         ttk.Label(footer,text='非官方社区工具',style='Muted.TLabel',font=('Microsoft YaHei UI',9)).pack(side='right')
 
     @staticmethod
@@ -401,7 +401,7 @@ class App:
         phase = self.store.automatic_phase(sid)
         watcher = SummaryWatcher(lambda kind, value: events.put(('auto_'+kind, (reference[0](),sid,value))), bbox,
                                  initial_phase=phase,spool=self.spool,session_id=sid,
-                                 capture_mode=capture_mode)
+                                 capture_mode=capture_mode,hide_border=self.store.setting('hide_capture_border',True))
         reference.append(weakref.ref(watcher))
         self.watcher = watcher
         watcher.start()
@@ -1013,6 +1013,10 @@ class Settings:
         self.capture_mode=tk.StringVar(value=app.store.setting('capture_mode','window'))
         ttk.Radiobutton(frame,text='捕获 Apex 窗口（推荐，支持被其他窗口遮挡）',variable=self.capture_mode,value='window').pack(anchor='w',pady=3)
         ttk.Radiobutton(frame,text='前台屏幕捕获（兼容模式，使用上方显示器设置）',variable=self.capture_mode,value='screen').pack(anchor='w',pady=3)
+        self.hide_capture_border=tk.BooleanVar(value=app.store.setting('hide_capture_border',True))
+        ttk.Checkbutton(frame,text='隐藏窗口捕获提示边框（系统支持时）',variable=self.hide_capture_border).pack(anchor='w',pady=5)
+        ttk.Label(frame,text='仅对本程序的窗口捕获有效；Windows未允许、旧系统不支持或其他程序仍要求边框时，边框可能保留。',
+                  style='Muted.TLabel',wraplength=680).pack(anchor='w',pady=3)
         self.auto_save = tk.BooleanVar(value=app.store.setting("auto_save", True))
         self.automatic = tk.BooleanVar(value=app.automatic.get())
         self.sound = tk.BooleanVar(value=app.store.setting("sound", True))
@@ -1070,6 +1074,7 @@ class Settings:
             monitor_mode = 'auto' if index == 0 else 'manual'
             old_mode = self.app.store.setting('monitor_mode', 'auto')
             old_capture_mode=self.app.store.setting('capture_mode','window')
+            old_hide_border=self.app.store.setting('hide_capture_border',True)
             old_device=self.app.store.setting('monitor_device')
             latest=monitors()
             device=old_device
@@ -1119,7 +1124,8 @@ class Settings:
             self.app.store.set_setting("auto_save", self.auto_save.get())
             self.app.store.set_setting("sound", self.sound.get())
             self.app.store.set_setting('capture_mode',self.capture_mode.get())
-            changed = (old_capture_mode!=self.capture_mode.get() or self.app.automatic.get() != self.automatic.get() or old_mode!=monitor_mode or
+            self.app.store.set_setting('hide_capture_border',self.hide_capture_border.get())
+            changed = (old_hide_border!=self.hide_capture_border.get() or old_capture_mode!=self.capture_mode.get() or self.app.automatic.get() != self.automatic.get() or old_mode!=monitor_mode or
                        monitor_mode == 'manual' and old_device!=device or
                        self.app.watcher is None and self.automatic.get() and self.app.store.active_session() or
                        monitor_mode == 'manual' and self.app.watcher is not None and self.app.watcher.bbox !=

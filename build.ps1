@@ -1,4 +1,4 @@
-param([string]$OutputDirectory = 'dist/v14-beta3')
+param([string]$OutputDirectory = 'dist/v14-beta4')
 $ErrorActionPreference = 'Stop'
 Set-Location -LiteralPath $PSScriptRoot
 $distributionRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot $OutputDirectory))

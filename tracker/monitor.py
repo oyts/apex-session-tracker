@@ -18,13 +18,13 @@ from PIL import ImageGrab
 
 class SummaryWatcher:
     def __init__(self,emit,bbox,detector=None,foreground=None,capture=None,interval=None,
-                 resolve_display=None,initial_phase=None,spool=None,session_id=None,capture_mode='screen'):
+                 resolve_display=None,initial_phase=None,spool=None,session_id=None,capture_mode='screen',hide_border=True):
         self.emit,self.bbox=emit,bbox
         self.detector=detector or SummaryDetector()
         self.interval=interval or POLICY.sample_seconds
         if capture_mode=='window':
             from .window_capture import GraphicsWindowSource
-            self.source=GraphicsWindowSource()
+            self.source=GraphicsWindowSource(hide_border=hide_border)
         else:self.source=WindowsFrameSource(bbox)
         self.foreground=foreground
         self.capture=capture

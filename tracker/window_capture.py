@@ -7,10 +7,12 @@ from .windows import apex_window,window_display,window_minimized,window_client_c
 
 
 class GraphicsWindowSource:
-    def __init__(self):
+    def __init__(self,hide_border=True):
         self.hwnd=None;self.target=None;self.control=None;self.capture=None
         self.latest=None;self.stamp=0.;self.lock=threading.Lock()
         self.generation=0;self.status='等待 Apex 游戏窗口';self.retry_after=0.
+        self.hide_border=hide_border
+        self.border_requested=None
 
     def close(self):
         self.generation+=1
@@ -36,18 +38,31 @@ class GraphicsWindowSource:
         def on_closed():
             if generation==self.generation:
                 with self.lock:self.latest=None;self.stamp=0.
-        def start(options):
-            capture=WindowsCapture(window_hwnd=hwnd,draw_border=None,**options)
+        def start(options,border):
+            capture=WindowsCapture(window_hwnd=hwnd,draw_border=border,**options)
             capture.event(on_frame_arrived);capture.event(on_closed)
-            return capture,capture.start_free_threaded()
+            control=capture.start_free_threaded()
+            self.border_requested=border  # Preference only, never proof of OS consent/effect.
+            return capture,control
+        options=dict(cursor_capture=False,secondary_window=False,minimum_update_interval=250)
+        border=False if self.hide_border else None
         try:
-            self.capture,self.control=start(dict(cursor_capture=False,secondary_window=False,minimum_update_interval=250))
+            self.capture,self.control=start(options,border)
         except Exception as error:
             if 'not supported' not in str(error).lower():raise
+            if border is False and 'border' in str(error).lower():
+                # Losing only the optional border property must not also discard
+                # cursor/interval settings supported by this Windows build.
+                logging.info('Border preference unsupported; retaining system border')
+                try:
+                    self.capture,self.control=start(options,None)
+                    return
+                except Exception as other:
+                    if 'not supported' not in str(other).lower():raise
             # Optional WGC properties require newer Windows builds. The window
             # API remains usable with system defaults on older supported builds.
             logging.info('Optional window capture properties unsupported; using WGC defaults')
-            self.capture,self.control=start(dict(cursor_capture=None,secondary_window=None,minimum_update_interval=None))
+            self.capture,self.control=start(dict(cursor_capture=None,secondary_window=None,minimum_update_interval=None),None)
 
     def read(self):
         with physical_pixels():
