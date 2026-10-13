@@ -171,11 +171,12 @@ class App:
         historyframe.pack(fill='both', expand=True)
         historyframe.rowconfigure(0, weight=1)
         historyframe.columnconfigure(0, weight=1)
-        columns = ('time', 'status', 'summary')
+        columns = ('time', 'status', 'summary', 'game_mode')
         self.history = ttk.Treeview(historyframe, columns=columns, show='headings', selectmode='browse', height=5)
-        for key, title, width in (('time','时间',115),('status','状态',95),('summary','本局数据 / 待确认原因',720)):
+        for key, title, width in (('time','时间',115),('status','状态',95),('summary','本局数据 / 待确认原因',720),('game_mode','模式',75)):
             self.history.heading(key, text=title)
-            self.history.column(key, width=width, minwidth=width, anchor='w', stretch=key=='summary')
+            self.history.column(key, width=width, minwidth=220 if key=='summary' else width,
+                                anchor='center' if key=='game_mode' else 'w', stretch=key=='summary')
         self.history.grid(row=0,column=0,sticky='nsew')
         vertical=ttk.Scrollbar(historyframe,orient='vertical',command=self.history.yview)
         vertical.grid(row=0,column=1,sticky='ns')
@@ -188,7 +189,7 @@ class App:
         self.wrapped_label(container,textvariable=self.status,foreground=TEXT).pack(fill='x',pady=(12,6))
         footer=ttk.Frame(container)
         footer.pack(fill='x')
-        ttk.Label(footer,text='本地保存 · 本地识别 · v14-beta2',style='Muted.TLabel',font=('Microsoft YaHei UI',9)).pack(side='left')
+        ttk.Label(footer,text='本地保存 · 本地识别 · v14-beta3',style='Muted.TLabel',font=('Microsoft YaHei UI',9)).pack(side='left')
         ttk.Label(footer,text='非官方社区工具',style='Muted.TLabel',font=('Microsoft YaHei UI',9)).pack(side='right')
 
     @staticmethod
@@ -308,7 +309,8 @@ class App:
                     summary = f"与截图 #{capture['duplicate_of']} 相同，需确认是否新的一局；" + summary
             if not Path(capture['image']).is_file(): summary+='；原图已清理或不可用'
             self.history.insert("", "end", iid=str(capture["id"]),
-                                values=(capture["created"][11:19], status_names[capture["status"]], summary), tags=(capture["status"],))
+                                values=(capture["created"][11:19], status_names[capture["status"]], summary,
+                                        '【外卡】' if self.store.matches.mode(capture['match_id'])=='wildcard' else ''), tags=(capture["status"],))
         if selection and self.history.exists(selection[0]):
             self.history.selection_set(selection[0])
 

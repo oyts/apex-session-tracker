@@ -123,7 +123,8 @@ class SummaryWatcher:
                 if stamp-self.drop_first<POLICY.dropship_confirm_seconds:continue
             else:self.drop_first=None
             with self.cycle_lock:
-                event=self.cycle.observe_start(observation.get('kind'),observation.get('evidence'))
+                mode='wildcard' if observation.get('profile') in ('wildcard-loading','wildcard-selection') else 'unknown'
+                event=self.cycle.observe_start(observation.get('kind'),observation.get('evidence'),mode)
             if event:
                 self.summary_missing_since=None;self.drop_first=None
                 self.first=self.best=None;self.matches=0

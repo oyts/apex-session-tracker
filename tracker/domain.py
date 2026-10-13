@@ -33,28 +33,31 @@ class MatchCycle:
     start_kind: str = ''
     generation: int = 0
     summary_pending: bool = False
+    game_mode: str = 'unknown'
 
-    def observe_start(self, kind, evidence):
+    def observe_start(self, kind, evidence, game_mode='unknown'):
         if kind not in ('selection', 'loading', 'dropship'):
             return None
         if self.summary_pending:return None  # cheap template candidate is not a validated end
         if self.match_key and not self.completed:
             if self.start_kind!='bootstrap':return None  # reconnect and mid-match changes
             self.start_kind=kind;self.generation+=1
-            return dict(match_key=self.match_key,kind=kind,evidence=evidence)
+            self.game_mode=game_mode
+            return dict(match_key=self.match_key,kind=kind,evidence=evidence,game_mode=self.game_mode)
         self.match_key = uuid.uuid4().hex
         self.completed = False
         self.summary_pending = False
         self.start_kind = kind
+        self.game_mode = game_mode
         self.generation += 1
-        return dict(match_key=self.match_key, kind=kind, evidence=evidence)
+        return dict(match_key=self.match_key, kind=kind, evidence=evidence,game_mode=self.game_mode)
 
     def summary_context(self):
         if self.match_key is None and not self.completed:
             self.match_key=uuid.uuid4().hex
             self.start_kind='bootstrap'
         if self.match_key and not self.completed:
-            return dict(match_key=self.match_key, attribution='bootstrap' if self.start_kind=='bootstrap' else 'start_observed')
+            return dict(match_key=self.match_key, attribution='bootstrap' if self.start_kind=='bootstrap' else 'start_observed',game_mode=self.game_mode)
         return dict(match_key=None, attribution='start_not_observed')
 
     def summary_preserved(self, context, provisional=False):

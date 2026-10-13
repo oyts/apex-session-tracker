@@ -31,6 +31,8 @@ def migrate(db):
     ''')
     if 'match_id' not in {r[1] for r in db.execute('PRAGMA table_info(captures)')}:
         db.execute('ALTER TABLE captures ADD COLUMN match_id INTEGER REFERENCES matches(id)')
+    if 'game_mode' not in {r[1] for r in db.execute('PRAGMA table_info(matches)')}:
+        db.execute("ALTER TABLE matches ADD COLUMN game_mode TEXT NOT NULL DEFAULT 'unknown'")
     rows=db.execute('SELECT * FROM captures ORDER BY id').fetchall()
     with db:
         for row in rows:
@@ -55,7 +57,7 @@ def migrate(db):
             db.execute('UPDATE captures SET match_id=? WHERE id=?',(mid,row['id']))
             db.execute('INSERT INTO ocr_results(capture_id,created,version,payload) VALUES (?,?,?,?)',
                        (row['id'],row['created'],json.loads(row['result']).get('recognition_version',0),row['result']))
-        db.execute('PRAGMA user_version=14')
+        db.execute('PRAGMA user_version=15')
 
 
 class MatchRepository:
@@ -65,7 +67,18 @@ class MatchRepository:
         with self.db:
             self.db.execute("INSERT OR IGNORE INTO matches(session_id,match_key,created,attribution,state) VALUES (?,?,?,?,'open')",
                             (session_id,event['match_key'],timestamp(),'start_observed'))
+            self._mode(session_id,event['match_key'],event.get('game_mode'))
         self.audit(session_id,'match_started',event)
+
+    def _mode(self,session_id,key,value):
+        # Only verified entry profiles provide a mode. Never use damage or a
+        # lobby tile; old matches stay unknown and repeated migration is safe.
+        if value=='wildcard':
+            self.db.execute("UPDATE matches SET game_mode='wildcard' WHERE session_id=? AND match_key=? AND game_mode='unknown'",(session_id,key))
+
+    def mode(self,match_id):
+        row=self.db.execute('SELECT game_mode FROM matches WHERE id=?',(match_id,)).fetchone()
+        return row[0] if row else 'unknown'
 
     def attach(self,session_id,result):
         key=result.get('match_key')
@@ -93,6 +106,8 @@ class MatchRepository:
         result['match_key']=key
         self.db.execute('INSERT OR IGNORE INTO matches(session_id,match_key,created,attribution) VALUES (?,?,?,?)',
                         (session_id,key,timestamp(),attribution))
+        if result.get('attribution')=='start_observed':
+            self._mode(session_id,key,result.get('game_mode'))
         return self.db.execute('SELECT id FROM matches WHERE session_id=? AND match_key=?',(session_id,key)).fetchone()[0]
 
     def record_ocr(self,cid,result):

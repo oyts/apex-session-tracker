@@ -24,10 +24,10 @@ class Store:
         self.screenshots.mkdir(exist_ok=True)
         self.db = sqlite3.connect(directory / "tracker.sqlite3")
         self.db.row_factory = sqlite3.Row
-        if self.db.execute('PRAGMA user_version').fetchone()[0] < 14 and self.db.execute(
+        if self.db.execute('PRAGMA user_version').fetchone()[0] < 15 and self.db.execute(
                 "SELECT 1 FROM sqlite_master WHERE name='captures'").fetchone():
             backups=directory/'backups';backups.mkdir(exist_ok=True)
-            target=backups/'before-v14.sqlite3'
+            target=backups/('before-v14.sqlite3' if self.db.execute('PRAGMA user_version').fetchone()[0]<14 else 'before-schema15.sqlite3')
             if not target.exists():
                 with closing(sqlite3.connect(target)) as backup:self.db.backup(backup)
         self.db.executescript("""

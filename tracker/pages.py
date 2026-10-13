@@ -1,7 +1,7 @@
-"""Entry-page classification using located text, never map or damage identity.
+"""Located entry evidence with separate Core and simultaneous Wildcard layouts.
 
-    Five classes also exist in the locker. Require match selection controls and
-    the bottom team-turn strip. Loading artwork alone is deliberately unknown.
+    Five classes also exist in the locker. Require mode-specific controls and
+    exclude navigation/reconnect pages. Loading artwork alone remains unknown.
 """
 import re
 from .domain import POLICY
@@ -25,13 +25,25 @@ def classify_lines(lines, width, height):
     def has(items,cues):
         return any(any(c in l['t'] for c in cues) for l in items)
     groups=sum(any(l['t'] in group for l in low) for group in CLASSES)
+    wildcard=has([l for l in top if l['x']<width*.48],('外卡','WILDCARD'))
+    # A mode tile in a lobby isn't entry evidence. Top navigation and reconnect
+    # notices veto both profiles, including when class labels are visible.
+    navigation=sum(has([l for l in top if l['cy']<height*.14],(word,))
+                   for word in ('游玩','挑战','通行证','传奇储物柜','商店','PLAY','CHALLENGES','BATTLEPASS','STORE'))
     # Mode-independent controls/turn strip. The locker lacks a team pick order.
     turn=has([l for l in low if l['cy']>=height*.90],
              ('正在选择','现在请选择','现在选择','等待选择','等待轮到','NOWSELECTING',
               'WAITINGFORTURN','SELECTYOURLEGEND','选择英雄','選擇英雄'))
     controls=has([l for l in valid if l['x']<width*.48 and l['cy']<height*.52],('小队静音','小隊靜音','MUTESQUAD','取消选择','取消選擇','选择英雄',
                      'SELECTLEGEND','CANCELSELECTION'))
-    excluded=has(top,('LEGENDLOCKER','英雄储物柜','英雄儲物櫃','传奇储物柜','FIRINGRANGE','靶场','靶場'))
+    excluded=navigation>=2 or has(top,('LEGENDLOCKER','英雄储物柜','英雄儲物櫃','传奇储物柜','FIRINGRANGE','靶场','靶場')) or has(valid,('正在重新连接','正在重新連線','尝试重新连接','RECONNECTING'))
+    choose=has([l for l in valid if l['x']<width*.48 and height*.25<l['cy']<height*.55],
+               ('选择传奇','選擇傳奇','SELECTLEGEND','SELECTALEGEND'))
+    squad_control=has([l for l in valid if l['x']<width*.48 and height*.25<l['cy']<height*.55],
+                      ('小队静音','小隊靜音','MUTESQUAD','选择成为跳伞指挥官','選擇成為跳傘指揮官','VOLUNTEERASJUMPMASTER'))
+    if wildcard and groups>=4 and choose and squad_control and not excluded:
+        return dict(kind='selection',profile='wildcard-selection',evidence=['wildcard-mode-at-top',
+                    'four-or-five-positioned-classes','located-select-legend','independent-squad-control'],confidence=1.,texts=valid)
     if groups>=4 and turn and controls and not excluded:
         return dict(kind='selection', evidence=['four-or-five-positioned-classes',
                     'bottom-team-selection', 'selection-controls'], confidence=1., texts=valid)
@@ -42,6 +54,11 @@ def classify_lines(lines, width, height):
     timer=any(re.fullmatch(r'\d{1,2}(?:[.:]\d{1,2})?',l['t']) for l in valid
               if height*.14<l['cy']<height*.43 and width*.35<l.get('cx',l['x'])<width*.65)
     mute=has(low,('小队静音','小隊靜音','MUTESQUAD'))
+    howto=has([l for l in valid if height*.45<l['cy']<height*.68 and width*.30<l.get('cx',l['x'])<width*.70],
+              ('玩法说明','玩法說明','HOWTOPLAY'))
+    if wildcard and countdown and timer and howto and not excluded:
+        return dict(kind='loading',profile='wildcard-loading',evidence=['wildcard-mode-at-top',
+                    'center-countdown-and-number','located-how-to-play'],confidence=1.,texts=valid)
     if mode and countdown and timer and mute and not excluded:
         return dict(kind='loading', evidence=['mode-at-top','center-countdown-and-number',
                     'bottom-mute-squad'], confidence=1., texts=valid)
@@ -58,11 +75,12 @@ def classify_lines(lines, width, height):
         return dict(kind='dropship',evidence=['located-jumpmaster','launch-control','initial-ship-control','compass'],confidence=1.,texts=valid)
     return dict(kind='unknown', evidence=[], confidence=0., texts=valid,
                 partial=dict(classes=groups, turn=turn, controls=controls,
-                             mode=mode,countdown=countdown,timer=timer,mute=mute))
+                             mode=mode,countdown=countdown,timer=timer,mute=mute,
+                             wildcard=wildcard,choose=choose,howto=howto,excluded=excluded))
 
 
 def classify_image(engine, image):
-    # Two bounded bands plus central timer: no full-screen OCR per sample.
+    # Four bounded bands; the center includes Wildcard's how-to-play heading.
     width=min(1800,image.width)
     small=image.resize((width,round(image.height*width/image.width)))
     lines=[]

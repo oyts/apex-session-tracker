@@ -5,7 +5,7 @@ from pathlib import Path
 from zipfile import ZipFile, ZIP_DEFLATED
 
 root = Path(__file__).resolve().parents[1]
-folder = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else root / 'dist' / 'v14-beta2' / 'ApexTracker'
+folder = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else root / 'dist' / 'v14-beta3' / 'ApexTracker'
 assert folder.name == 'ApexTracker'
 archive = root / 'dist' / 'ApexTracker-Windows.zip'
 assert (folder / 'ApexTracker.exe').is_file()
