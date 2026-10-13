@@ -5,7 +5,7 @@ from tracker import app as module,windows
 def test_selection_survives_primary_switch_unplug_and_reconnect(monkeypatch):
     a={'device':'A','bbox':(0,0,2560,1440),'primary':True}
     b={'device':'B','bbox':(-2560,0,0,1600),'primary':False}
-    values={'monitor_device':'A','monitor':0,'monitor_mode':'manual'}
+    values={'monitor_device':'A','monitor':0,'monitor_mode':'manual','capture_mode':'screen'}
     obj=module.App.__new__(module.App)
     obj.store=SimpleNamespace(setting=lambda k,d=None:values.get(k,d),set_setting=lambda k,v:values.update({k:v}))
     obj.displays=[a,b]

@@ -67,6 +67,8 @@ def watcher(tmp_path,phase=None):
 
 
 def entry(w,kind='selection',age=0):
+    # This helper represents a next-game boundary after successful summary OCR.
+    if w.cycle.summary_pending:w.accept_summary(dict(match_key=w.epoch))
     token=(w.probe_generation,time.monotonic()-age);w.probe_pending=token
     w.submit_gameplay(token,dict(kind=kind,evidence=['synthetic located-page evidence']))
     w._gameplay_results()
@@ -76,6 +78,7 @@ def test_durable_evidence_not_vetoed_by_closed_cycle_or_busy(tmp_path):
     s,e,w,sp=watcher(tmp_path);w.step();w.step()
     assert len(list(sp.pending()))==1 and w.locked
     s.match=False;w.step();w.step()
+    w.summary_missing_since=time.monotonic()-13  # a real evidence gap, not a 1s template dropout
     s.image=Image.new('RGB',(32,32),'white');s.match=True;w.step();w.step()
     assert len(frames(e))==2 and len(list(sp.pending()))==2
     assert frames(e)[1]['match_key'] is None
@@ -198,6 +201,7 @@ def test_manual_phase_recovers_committed_summary_after_stop(tmp_path):
     store=Store(tmp_path);sid=store.start_session(mode=3)
     cycle=MatchCycle();cycle.observe_start('selection',['synthetic'])
     store.set_setting('automatic_phase_'+str(sid),dict(version=14,cycle=cycle.snapshot()))
-    store.add_capture(sid,'a','a',dict(observation(cycle.match_key),source='manual',summary_candidate_preserved=True))
+    valid=[dict(text='总结',x=100,cy=40),dict(text='击杀/助攻/击倒',x=100,cy=300),dict(text='造成伤害',x=100,cy=370)]
+    store.add_capture(sid,'a','a',dict(observation(cycle.match_key),source='manual',summary_candidate_preserved=True,lines=valid))
     assert store.automatic_phase(sid)['cycle']['completed']
     store.close()

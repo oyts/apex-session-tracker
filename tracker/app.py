@@ -188,7 +188,7 @@ class App:
         self.wrapped_label(container,textvariable=self.status,foreground=TEXT).pack(fill='x',pady=(12,6))
         footer=ttk.Frame(container)
         footer.pack(fill='x')
-        ttk.Label(footer,text='本地保存 · 本地识别 · v14-beta1',style='Muted.TLabel',font=('Microsoft YaHei UI',9)).pack(side='left')
+        ttk.Label(footer,text='本地保存 · 本地识别 · v14-beta2',style='Muted.TLabel',font=('Microsoft YaHei UI',9)).pack(side='left')
         ttk.Label(footer,text='非官方社区工具',style='Muted.TLabel',font=('Microsoft YaHei UI',9)).pack(side='right')
 
     @staticmethod
@@ -386,7 +386,8 @@ class App:
             self.auto_status.set('自动记录：无法获取显示器，请手动导入')
             return
         sid = active['id']
-        follow = self.store.setting('monitor_mode', 'auto') == 'auto'
+        capture_mode=self.store.setting('capture_mode','window')
+        follow = capture_mode=='window' or self.store.setting('monitor_mode', 'auto') == 'auto'
         display=self.selected_display()
         if not follow and display is None:
             self.auto_status.set('自动记录：所选显示器未连接，请在设置中重新选择')
@@ -397,7 +398,8 @@ class App:
         # The native capture thread must not keep the Tk App alive through a closure.
         phase = self.store.automatic_phase(sid)
         watcher = SummaryWatcher(lambda kind, value: events.put(('auto_'+kind, (reference[0](),sid,value))), bbox,
-                                 initial_phase=phase,spool=self.spool,session_id=sid)
+                                 initial_phase=phase,spool=self.spool,session_id=sid,
+                                 capture_mode=capture_mode)
         reference.append(weakref.ref(watcher))
         self.watcher = watcher
         watcher.start()
@@ -414,7 +416,7 @@ class App:
             if display:self.store.set_setting('monitor',current.index(display))
             # A following watcher resolves current metadata itself. Restarting
             # here would lose its same-summary/Alt+Tab episode lock.
-            if self.store.setting('monitor_mode', 'auto') != 'auto' or self.watcher is None:
+            if (self.store.setting('capture_mode','window')=='screen' and self.store.setting('monitor_mode', 'auto') != 'auto') or self.watcher is None:
                 self.configure_automatic()
 
     def _stop_automatic(self):
@@ -488,8 +490,8 @@ class App:
             watcher.last_observation=evidence
             now=time.monotonic()
             if evidence['kind']!=getattr(watcher,'diagnostic_kind',None) or now-getattr(watcher,'diagnostic_last',0)>=30:
-                logging.info('Entry page epoch=%s kind=%s seconds=%s evidence=%s',
-                             watcher.epoch,evidence['kind'],evidence['elapsed'],evidence['evidence'])
+                logging.info('Entry page epoch=%s kind=%s seconds=%s evidence=%s partial=%s',
+                             watcher.epoch,evidence['kind'],evidence['elapsed'],evidence['evidence'],evidence.get('partial'))
                 watcher.diagnostic_last=now
                 watcher.diagnostic_kind=evidence['kind']
         except Exception:
@@ -709,6 +711,12 @@ class App:
                     if self.watcher and active and active['id']==sid:
                         self.watcher.reject_candidate(epoch)
                     self.status.set('候选未通过文字校验，原图已保留（最近8张）；继续检测，可从本地候选目录导入补录。')
+                elif kind=='duplicate_evidence':
+                    sid,cid,context=payload
+                    if self.watcher and self.store.active_session() and self.store.active_session()['id']==sid:
+                        from .automatic import is_summary_result
+                        if is_summary_result(self.store.capture(cid)['result']):self.watcher.accept_summary(context)
+                        else:self.watcher.reject_candidate(context.get('match_key'))
                 elif kind == "saved":
                     self.status.set(f"截图已保存（{payload['elapsed']:.2f}秒），可以离开总结页；正在后台识别…")
                     if payload["live"] and self.store.setting("sound", True):
@@ -733,6 +741,9 @@ class App:
                     if len(result["cards"]) > required_count and all(not c["name"] and c["damage"] is None for c in result["cards"]):
                         result["cards"] = result["cards"][:required_count]
                     capture_id = self.store.add_capture(sid, path, digest, result)
+                    from .automatic import is_summary_result
+                    if self.watcher and is_summary_result(result) and self.store.active_session() and self.store.active_session()['id']==sid:
+                        self.watcher.accept_summary(result)
                     self._ack_spool()
                     state, saved = self.reconcile_session(sid)
                     auto_saved = capture_id in saved
@@ -923,6 +934,8 @@ class Review:
                 current['result']['keep_separate']=True
                 self.app.store.update_recognition(current['id'],current['result'])
             self.app.store.confirm(self.capture["id"], rows, self.remember.get(), allow_duplicate=True, manual=True)
+            if self.app.watcher and self.app.store.active_session() and self.app.store.active_session()['id']==self.capture['session_id']:
+                self.app.watcher.accept_summary(self.capture['result'])
             _, saved = self.app.reconcile_session(self.capture['session_id'])
             self.app.refresh()
             self.app.status.set(f"已保存，累计统计已更新；另补算 {len(saved)} 局。")
@@ -993,12 +1006,15 @@ class Settings:
             selected=app.selected_display()
             if selected:self.monitor.current(app.displays.index(selected)+1)
             else:self.monitor.set('原显示器未连接，请重新选择')
-        ttk.Label(frame, text='自动选屏按 Apex 前台窗口位置跟随，游戏换屏后继续检测；不改变系统焦点。\n手动选屏可固定截图来源。自动选屏下，快捷键补录也需让 Apex 位于前台。',
+        ttk.Label(frame, text='窗口捕获绑定 Apex，切换其他应用时仍可检测；最小化或游戏停止渲染时会暂停。\n前台屏幕模式保留自动跟随／手选屏幕。快捷键补录仍需游戏在前台。',
                   style='Muted.TLabel', wraplength=680).pack(anchor='w', pady=6)
+        self.capture_mode=tk.StringVar(value=app.store.setting('capture_mode','window'))
+        ttk.Radiobutton(frame,text='捕获 Apex 窗口（推荐，支持被其他窗口遮挡）',variable=self.capture_mode,value='window').pack(anchor='w',pady=3)
+        ttk.Radiobutton(frame,text='前台屏幕捕获（兼容模式，使用上方显示器设置）',variable=self.capture_mode,value='screen').pack(anchor='w',pady=3)
         self.auto_save = tk.BooleanVar(value=app.store.setting("auto_save", True))
         self.automatic = tk.BooleanVar(value=app.automatic.get())
         self.sound = tk.BooleanVar(value=app.store.setting("sound", True))
-        ttk.Checkbutton(frame, text='自动捕获总结页（仅 Apex 前台；无需按截图键）', variable=self.automatic).pack(anchor='w', pady=5)
+        ttk.Checkbutton(frame, text='自动捕获总结页（无需按截图键）', variable=self.automatic).pack(anchor='w', pady=5)
         ttk.Checkbutton(frame, text="身份唯一、数字识别完整且置信度达标时，自动计入统计", variable=self.auto_save).pack(anchor="w", pady=5)
         ttk.Checkbutton(frame, text="手动截图保存成功时播放提示音（自动模式静默）", variable=self.sound).pack(anchor="w", pady=5)
         ttk.Label(frame, text="昵称绑定相同会进入待确认。首次识别后，也可以直接在修正窗口选择玩家并记住对应关系。",
@@ -1051,6 +1067,7 @@ class Settings:
             if not 0<=index<=len(self.display_choices):raise ValueError('请选择自动跟随或当前连接的游戏显示器。')
             monitor_mode = 'auto' if index == 0 else 'manual'
             old_mode = self.app.store.setting('monitor_mode', 'auto')
+            old_capture_mode=self.app.store.setting('capture_mode','window')
             old_device=self.app.store.setting('monitor_device')
             latest=monitors()
             device=old_device
@@ -1099,7 +1116,8 @@ class Settings:
                 self.app.store.set_setting('monitor_device',device)
             self.app.store.set_setting("auto_save", self.auto_save.get())
             self.app.store.set_setting("sound", self.sound.get())
-            changed = (self.app.automatic.get() != self.automatic.get() or old_mode!=monitor_mode or
+            self.app.store.set_setting('capture_mode',self.capture_mode.get())
+            changed = (old_capture_mode!=self.capture_mode.get() or self.app.automatic.get() != self.automatic.get() or old_mode!=monitor_mode or
                        monitor_mode == 'manual' and old_device!=device or
                        self.app.watcher is None and self.automatic.get() and self.app.store.active_session() or
                        monitor_mode == 'manual' and self.app.watcher is not None and self.app.watcher.bbox !=

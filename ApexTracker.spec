@@ -7,9 +7,12 @@ binaries = []
 hiddenimports = []
 datas += copy_metadata('rapidocr')
 datas += copy_metadata('onnxruntime')
+datas += copy_metadata('windows-capture')
 tmp_ret = collect_all('rapidocr')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 tmp_ret = collect_all('onnxruntime')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+tmp_ret = collect_all('windows_capture')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
 

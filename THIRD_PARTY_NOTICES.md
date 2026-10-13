@@ -10,6 +10,7 @@
 - [Pillow](https://github.com/python-pillow/Pillow)：MIT-CMU。
 - [OpenCV](https://github.com/opencv/opencv)：Apache-2.0（随包附带其他组件许可）。
 - [NumPy](https://github.com/numpy/numpy)：BSD-3-Clause，随包附带相关运行库许可。
+- [windows-capture](https://github.com/NiiightmareXD/windows-capture)：MIT；Windows Graphics Capture 的本地封装，运行在本程序内，不向游戏进程注入。
 - [Shapely](https://github.com/shapely/shapely)：BSD-3-Clause，包含 GEOS 相关许可。
 - OmegaConf、ANTLR Python runtime、PyYAML、requests 及其他间接依赖：以各发行包随附的许可文件为准。
 

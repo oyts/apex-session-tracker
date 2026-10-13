@@ -56,6 +56,10 @@ def test_native_label_bank_antialias_and_missing_words():
     for bounds in ((0,0,1000,90),(100,230,200,260),(100,190,220,220)):
         negative=image.copy();ImageDraw.Draw(negative).rectangle(bounds,fill=0)
         assert detector.detect(negative.convert('RGB')) is None
+    far_left=image.copy()
+    ImageDraw.Draw(far_left).rectangle((300,0,680,90),fill=0)
+    far_left.paste(Image.fromarray(detector.sources['heading']),(40,12))
+    assert detector.detect(far_left.convert('RGB')) is None
 
 
 class Sequence:

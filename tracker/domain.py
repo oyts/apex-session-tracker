@@ -14,6 +14,8 @@ class CapturePolicy:
     start_text_score: float = .85
     number_score: float = .94
     identity_score: float = .85
+    summary_gap_seconds: float = 12.
+    dropship_confirm_seconds: float = 2.
 
 
 POLICY = CapturePolicy()
@@ -30,14 +32,19 @@ class MatchCycle:
     completed: bool = False
     start_kind: str = ''
     generation: int = 0
+    summary_pending: bool = False
 
     def observe_start(self, kind, evidence):
-        if kind not in ('selection', 'loading'):
+        if kind not in ('selection', 'loading', 'dropship'):
             return None
+        if self.summary_pending:return None  # cheap template candidate is not a validated end
         if self.match_key and not self.completed:
-            return None  # includes reconnect and mid-match character changes
+            if self.start_kind!='bootstrap':return None  # reconnect and mid-match changes
+            self.start_kind=kind;self.generation+=1
+            return dict(match_key=self.match_key,kind=kind,evidence=evidence)
         self.match_key = uuid.uuid4().hex
         self.completed = False
+        self.summary_pending = False
         self.start_kind = kind
         self.generation += 1
         return dict(match_key=self.match_key, kind=kind, evidence=evidence)
@@ -50,9 +57,10 @@ class MatchCycle:
             return dict(match_key=self.match_key, attribution='bootstrap' if self.start_kind=='bootstrap' else 'start_observed')
         return dict(match_key=None, attribution='start_not_observed')
 
-    def summary_preserved(self, context):
+    def summary_preserved(self, context, provisional=False):
         if context.get('match_key') == self.match_key and self.match_key:
             self.completed = True
+            self.summary_pending = provisional
 
     def snapshot(self):
         return asdict(self)

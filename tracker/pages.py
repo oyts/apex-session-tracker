@@ -29,7 +29,7 @@ def classify_lines(lines, width, height):
     turn=has([l for l in low if l['cy']>=height*.90],
              ('正在选择','现在请选择','现在选择','等待选择','等待轮到','NOWSELECTING',
               'WAITINGFORTURN','SELECTYOURLEGEND','选择英雄','選擇英雄'))
-    controls=has(top,('小队静音','小隊靜音','MUTESQUAD','取消选择','取消選擇','选择英雄',
+    controls=has([l for l in valid if l['x']<width*.48 and l['cy']<height*.52],('小队静音','小隊靜音','MUTESQUAD','取消选择','取消選擇','选择英雄',
                      'SELECTLEGEND','CANCELSELECTION'))
     excluded=has(top,('LEGENDLOCKER','英雄储物柜','英雄儲物櫃','传奇储物柜','FIRINGRANGE','靶场','靶場'))
     if groups>=4 and turn and controls and not excluded:
@@ -45,6 +45,17 @@ def classify_lines(lines, width, height):
     if mode and countdown and timer and mute and not excluded:
         return dict(kind='loading', evidence=['mode-at-top','center-countdown-and-number',
                     'bottom-mute-squad'], confidence=1., texts=valid)
+    # Secondary start evidence is an initial dropship conjunction, never a
+    # generic combat HUD (which also exists in spectator/respawn/reconnect).
+    center=[l for l in valid if width*.23<l.get('cx',l['x'])<width*.78 and height*.15<l['cy']<height*.80]
+    compass=[l for l in top if width*.20<l.get('cx',l['x'])<width*.80]
+    directions=sum(any(l['t']==t for l in compass) for t in ('N','NE','E','SE','S','SW','W','NW'))
+    jumpmaster=has(center,('是跳伞指挥官','是跳傘指揮官','ISTHEJUMPMASTER','YOUAREJUMPMASTER'))
+    launch=has(center,('单独发射','單獨發射','单独跳伞','LAUNCHSOLO','RELINQUISH','放弃'))
+    ship=has(center,('标记所有复制器','標記所有複製器','MARKALLREPLICATORS','运输船中的玩家','PLAYERSINDROPSHIP'))
+    spectator=has(valid,('观战','觀戰','SPECTATING','返回大厅','返回大廳','死亡回放','DEATHRECAP','重生倒计时','RESPAWNING'))
+    if jumpmaster and launch and ship and directions>=3 and not excluded and not spectator:
+        return dict(kind='dropship',evidence=['located-jumpmaster','launch-control','initial-ship-control','compass'],confidence=1.,texts=valid)
     return dict(kind='unknown', evidence=[], confidence=0., texts=valid,
                 partial=dict(classes=groups, turn=turn, controls=controls,
                              mode=mode,countdown=countdown,timer=timer,mute=mute))
@@ -55,7 +66,7 @@ def classify_image(engine, image):
     width=min(1800,image.width)
     small=image.resize((width,round(image.height*width/image.width)))
     lines=[]
-    for x1,y1,x2,y2 in ((0,0,.48,.24),(0,.60,1,1),(.32,.14,.68,.43)):
+    for x1,y1,x2,y2 in ((0,0,.48,.52),(0,.60,1,1),(.23,.14,.78,.80),(.20,0,.80,.14)):
         bounds=tuple(round(v) for v in (small.width*x1,small.height*y1,small.width*x2,small.height*y2))
         crop=small.crop(bounds)
         for line in engine.hud_lines(crop):

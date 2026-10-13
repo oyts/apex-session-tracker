@@ -39,11 +39,13 @@ $env:RUN_OCR_TESTS='1'
 .\.venv\Scripts\python.exe tools\package_release.py
 ```
 
-输出 `dist/v14-beta1/ApexTracker/ApexTracker.exe` 和 `dist/ApexTracker-Windows.zip`。README、第三方许可与依赖许可随完整文件夹交付，不能只搬exe。`tools/package_source.py` 用允许清单输出 `dist/ApexTracker-Source-v14.zip`，排除数据库、图片、日志、诊断、环境和构建产物；发布前仍需审阅文件清单及许可边界。
+输出 `dist/v14-beta2/ApexTracker/ApexTracker.exe` 和 `dist/ApexTracker-Windows.zip`。README、第三方许可与依赖许可随完整文件夹交付，不能只搬exe。`tools/package_source.py` 用允许清单输出 `dist/ApexTracker-Source-v14.zip`，排除数据库、图片、日志、诊断、环境和构建产物；发布前仍需审阅文件清单及许可边界。
+
+可选窗口捕获诊断：`ApexTracker.exe --self-test-window report.json`，仅创建自身非激活测试窗口，校验实际WGC客户区像素，不读取游戏窗口或整屏；需要真实Windows桌面，不在无交互CI中启用。
 
 ## 定位问题
 
-1. 页面没被采集：看自动状态里的显示器、前台情况。窗口客户区是否完整、是否黑屏？自动跟随通过公开窗口位置确定，不轮流拍全桌面。
+1. 页面没被采集：看自动状态里的窗口捕获、最小化和新帧情况；兼容模式检查显示器、前台情况。窗口客户区是否完整、是否黑屏？自动跟随通过公开窗口位置确定，不轮流拍全桌面。
 2. 有原图但待确认：历史“原因”区分比赛归属、名单不足和数字低置信；不要先调低数字阈值。归属不明可明确选新比赛／已有比赛。
 3. 识别页是unknown：检查 `pages.classify_lines` 的位置和组合证据，只有一个职业词不能新建场。阈值／时间集中在domain，修改需有正负例。
 4. OCR失败：原图和spool保留；原图路径是否可用、模型依赖是否一致？重启可以恢复尚未提交的PNG＋JSON，已提交的精确像素不再累计。

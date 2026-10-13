@@ -1,5 +1,13 @@
 # 开始页研究与验证范围（2026-10-12）
 
+## Beta 2 补充（2026-10-13）
+
+实际使用新增了一种选人布局：小队静音位于左侧约39%高度，而非顶部25%。真实原图OCR按扩展左侧控制带已判为selection；保留职业标签与底部团队选人条的必要组合，未只放宽成单关键词。
+
+单窗口采样采用[微软 CreateForWindow](https://learn.microsoft.com/windows/win32/api/windows.graphics.capture.interop/nf-windows-graphics-capture-interop-igraphicscaptureiteminterop-createforwindow)与[Windows Graphics Capture](https://learn.microsoft.com/en-us/windows/apps/develop/media-authoring-processing/screen-capture)系统API，通过[windows-capture 2.0.1](https://pypi.org/project/windows-capture/2.0.1/)本地封装按HWND绑定。已实际读取被遮挡的自建窗口及运行中的Apex客户区；没有观察后台切屏连续整局、独占全屏、所有显卡或最小化渲染表现，不能把一次取帧当作全场验证。最低系统／API支持由Windows和封装返回；可选属性不支持时退回WGC默认属性，整个窗口API不可用时显示兼容模式提示，不默默捕获别的软件。
+
+运输船备用判定用位置明确的多项文字、罗盘和连续两次探测；单纯战斗HUD仍不是新局证据。它提供漏掉选人后的第二次机会，不能保证跳过所有开始阶段后仍可确定比赛。新增合成观战、靶场、死亡回放、重生负例；全模式运输船真实像素仍待验证。
+
 结论：用加载／选人组合证据开启比赛，比旧跳伞HUD锁更贴近用户提出的循环。五类职业标签本身不够；大厅英雄储物柜也有职业分类。不能根据地图、排位牌或任何单个词断言新局。
 
 ## 核实资料

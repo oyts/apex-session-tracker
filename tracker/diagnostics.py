@@ -175,11 +175,67 @@ def monitor_follow_fixture(root):
 
 def synthetic_gameplay_transition(watcher):
     """Explicit test observations only, never called by normal application flow."""
+    watcher.accept_summary(dict(match_key=watcher.epoch))  # synthetic successful full OCR
     for stamp in (time.monotonic()-3,time.monotonic()-1):
         token=(watcher.probe_generation,stamp)
         watcher.probe_pending=token
         watcher.submit_gameplay(token,dict(kind='selection',evidence=['synthetic fixture selection']))
         watcher._gameplay_results()
+
+
+def run_window_capture_smoke(output):
+    """Only create/capture our own non-activating native STATIC window.
+
+    The packaged WGC extension must produce actual white/black client pixels.
+    This is intentionally opt-in, never run by normal startup or headless CI.
+    """
+    import ctypes
+    from ctypes import wintypes
+    from .window_capture import GraphicsWindowSource
+    from .windows import window_client_crop
+    user=ctypes.WinDLL('user32',use_last_error=True)
+    user.GetForegroundWindow.restype=wintypes.HWND
+    user.CreateWindowExW.argtypes=[wintypes.DWORD,wintypes.LPCWSTR,wintypes.LPCWSTR,wintypes.DWORD,
+                                  ctypes.c_int,ctypes.c_int,ctypes.c_int,ctypes.c_int,
+                                  wintypes.HWND,wintypes.HMENU,wintypes.HINSTANCE,ctypes.c_void_p]
+    user.CreateWindowExW.restype=wintypes.HWND
+    user.DestroyWindow.argtypes=[wintypes.HWND];user.UpdateWindow.argtypes=[wintypes.HWND]
+    before=user.GetForegroundWindow();hwnd=None;source=GraphicsWindowSource();report={'ok':False}
+    try:
+        hwnd=user.CreateWindowExW(0x08000080,'STATIC','Apex tracker own capture diagnostic',
+                                  0x80000000|0x10000000|6,40,40,180,100,None,None,None,None)
+        if not hwnd:raise OSError('Cannot create own non-activating test window')
+        child=user.CreateWindowExW(0,'STATIC','',0x40000000|0x10000000|4,40,20,60,40,hwnd,None,None,None)
+        if not child:raise OSError('Cannot create diagnostic color patch')
+        user.UpdateWindow(hwnd);user.UpdateWindow(child)
+        assert user.GetForegroundWindow()==before,'Own test window unexpectedly changed foreground'
+        source._start(hwnd);deadline=time.monotonic()+8;image=None
+        while time.monotonic()<deadline:
+            with source.lock:image=source.latest.copy() if source.latest else None
+            if image is not None:break
+            time.sleep(.05)
+        assert image is not None,'No actual WGC frame received'
+        bounds=window_client_crop(hwnd,image.size);assert bounds,'Invalid client coordinates'
+        image=image.crop(bounds)
+        report['observed']=[image.getpixel((10,10)),image.getpixel((60,40))]
+        report['system_colors']=[(i,user.GetSysColor(i)) for i in (5,6,20,21)]
+        assert image.size==(180,100),image.size
+        def system_rgb(index):
+            color=user.GetSysColor(index)
+            return tuple((color>>shift)&255 for shift in (0,8,16))
+        # STATIC brushes follow Windows theme/system colors, including high contrast.
+        assert image.getpixel((10,10))==system_rgb(5),image.getpixel((10,10))
+        # BLACKRECT's themed dark brush can use 3DDKSHADOW instead of WINDOWFRAME.
+        assert image.getpixel((60,40)) in (system_rgb(6),system_rgb(21)),image.getpixel((60,40))
+        assert image.getpixel((10,10))!=image.getpixel((60,40))
+        report.update(ok=True,own_nonactivating_window=True,actual_wgc_pixels=True,
+                      client_size=list(image.size),game_window_sampled=False,foreground_preserved=True)
+    except Exception as error:report['error']=str(error)
+    finally:
+        source.close()
+        if hwnd:user.DestroyWindow(hwnd)
+    Path(output).write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
+    return report['ok']
 
 
 def run_smoke(sample: Path, output: Path):

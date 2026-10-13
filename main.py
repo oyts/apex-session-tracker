@@ -16,9 +16,13 @@ def main():
     parser.add_argument("--output-json", type=Path, help="将识别结果写入 UTF-8 JSON 文件")
     parser.add_argument("--self-test", type=Path, help="使用 --recognize 的样例执行隔离诊断，结果写入此文件")
     parser.add_argument("--self-test-roster", type=Path, help="隐藏窗口验证名单与历史补算，不采集屏幕或操作游戏")
+    parser.add_argument('--self-test-window',type=Path,help='验证本程序的非激活测试窗口捕获，不读取游戏画面')
     args = parser.parse_args()
     from tracker.windows import enable_dpi
     enable_dpi()
+    if args.self_test_window:
+        from tracker.diagnostics import run_window_capture_smoke
+        raise SystemExit(0 if run_window_capture_smoke(args.self_test_window) else 1)
     if args.self_test_roster:
         from tracker.diagnostics import run_roster_smoke
         raise SystemExit(0 if run_roster_smoke(args.self_test_roster) else 1)

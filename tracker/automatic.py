@@ -62,7 +62,9 @@ class SummaryDetector:
                 (scale,self._template(self.sources[name],scale,scale*height/625)) for scale,_ in variants]
                 for name,variants in self.templates.items()}
         templates = self.aspect_templates[height]
-        header = binary[:round(height*.16)]
+        # Both summary tabs live in the central header band. A tiny scaled
+        # template can otherwise match a map name at the far left of selection.
+        header = binary[:round(height*.16),320:680]
         if not any(self._hits(header, template, .65) for _, template in templates['heading']):
             return None
         top = round(height*.25)

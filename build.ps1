@@ -1,4 +1,4 @@
-param([string]$OutputDirectory = 'dist/v14-beta1')
+param([string]$OutputDirectory = 'dist/v14-beta2')
 $ErrorActionPreference = 'Stop'
 Set-Location -LiteralPath $PSScriptRoot
 $distributionRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot $OutputDirectory))
@@ -10,7 +10,7 @@ $pythonPath = Join-Path $PSScriptRoot '.venv\Scripts\python.exe'
 if (-not (Test-Path -LiteralPath $pythonPath)) {
     throw 'Create .venv and install requirements.txt plus pyinstaller first.'
 }
-& $pythonPath -m PyInstaller --noconfirm --clean --windowed --name ApexTracker --manifest 'tracker/windows.manifest' --distpath $distributionRoot --workpath 'build/v14' --add-data 'tracker/summary_templates.json;tracker' --collect-all rapidocr --collect-all onnxruntime --copy-metadata rapidocr --copy-metadata onnxruntime main.py
+& $pythonPath -m PyInstaller --noconfirm --clean --windowed --name ApexTracker --manifest 'tracker/windows.manifest' --distpath $distributionRoot --workpath 'build/v14' --add-data 'tracker/summary_templates.json;tracker' --collect-all rapidocr --collect-all onnxruntime --collect-all windows_capture --copy-metadata rapidocr --copy-metadata onnxruntime --copy-metadata windows-capture main.py
 if ($LASTEXITCODE -ne 0) { throw 'Build failed.' }
 & $pythonPath tools\collect_licenses.py $distributionFolder
 if ($LASTEXITCODE -ne 0) { throw 'Notice collection failed.' }

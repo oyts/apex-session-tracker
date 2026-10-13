@@ -152,13 +152,22 @@ class Store:
     def automatic_phase(self, session_id):
         phase = self.setting('automatic_phase_'+str(session_id))
         if phase is not None:
-            if phase.get('version')==14 and phase.get('cycle',{}).get('match_key') and not phase['cycle'].get('completed'):
+            if phase.get('version')==14 and phase.get('cycle',{}).get('match_key'):
                 from .automatic import is_summary_result
+                accepted=False
                 for capture in self.captures(session_id):
                     data=json.loads(capture['result'])
-                    if data.get('match_key')==phase['cycle']['match_key'] and (data.get('summary_candidate_preserved') or is_summary_result(data)):
+                    if data.get('match_key')==phase['cycle']['match_key'] and (is_summary_result(data) or capture['status']=='confirmed' and data.get('manual_revision')):
                         phase['cycle']['completed']=True
+                        phase['cycle']['summary_pending']=False
+                        accepted=True
                         break
+                if not accepted and phase['cycle'].get('summary_pending'):
+                    from .journal import EvidenceSpool
+                    pending=any(p.get('session_id')==session_id and p.get('match_key')==phase['cycle']['match_key']
+                                for p in EvidenceSpool(self.directory).pending())
+                    if not pending:
+                        phase['cycle'].update(completed=False,summary_pending=False)
             return phase
         # Conservative upgrade: the last automatic summary has already been
         # captured. Reopening it after installing an update is not a new game.
@@ -427,6 +436,7 @@ class Store:
         hashes or an explicitly verified match group merge; OCR text, diagnostic
         footer, survival time and totals never do.
         """
+        self._apply_episode_reviews(session_id)
         captures=self.captures(session_id)
         if any(c['match_id'] is None for c in captures):
             from .matches import migrate
@@ -472,6 +482,30 @@ class Store:
                         self.db.execute('UPDATE captures SET duplicate_of=NULL WHERE id=?',(capture['id'],))
         self.matches.sync(session_id)
         return {cid:parent for cid,parent in changes.items() if parent}
+
+    def _apply_episode_reviews(self,session_id):
+        """Human attribution applies to its proven sampling episode, including
+        observations arriving later. Conflicting explicit reviews stay separate.
+        Never group by numeric stats, OCR names, proximity or partial pixels.
+        """
+        captures=self.captures(session_id);resolved={}
+        for row in captures:
+            data=json.loads(row['result']);episode=data.get('episode_key')
+            if episode and data.get('attribution')=='reviewed' and not data.get('keep_separate'):
+                resolved.setdefault(episode,set()).add((data.get('match_key'),row['match_id']))
+        with self.db:
+            for row in captures:
+                data=json.loads(row['result']);targets=resolved.get(data.get('episode_key'),set())
+                if len(targets)!=1 or data.get('keep_separate') or data.get('attribution')=='reviewed':continue
+                if data.get('source')!='automatic':continue
+                key,mid=next(iter(targets))
+                if not key or not mid:continue
+                if row['match_id']==mid and data.get('attribution')=='episode_reviewed':continue
+                data.update(match_key=key,attribution='episode_reviewed')
+                self.db.execute('UPDATE captures SET match_id=?,result=? WHERE id=?',
+                                (mid,json.dumps(data,ensure_ascii=False),row['id']))
+                self.db.execute('INSERT INTO reviews(capture_id,created,action,payload) VALUES (?,?,?,?)',
+                                (row['id'],now(),'episode_attribution',json.dumps(dict(match_id=mid))))
 
     def update_recognition(self,capture_id,result):
         previous=self.capture(capture_id)['result']

@@ -30,3 +30,4 @@ six==1.17.0
 tqdm==4.70.1
 typing_extensions==4.16.0
 urllib3==2.8.0
+windows-capture==2.0.1; sys_platform == 'win32'

@@ -69,6 +69,15 @@ class MatchRepository:
 
     def attach(self,session_id,result):
         key=result.get('match_key')
+        episode=result.get('episode_key')
+        reviewed=set()
+        if episode and result.get('attribution')!='reviewed' and not result.get('keep_separate'):
+            for row in self.db.execute('SELECT result FROM captures WHERE session_id=?',(session_id,)):
+                data=json.loads(row[0])
+                if data.get('episode_key')==episode and data.get('attribution')=='reviewed' and not data.get('keep_separate'):
+                    reviewed.add(data.get('match_key'))
+            if len(reviewed)==1:
+                key=next(iter(reviewed));result.update(match_key=key,attribution='episode_reviewed')
         if not key and result.get('source')=='automatic' and result.get('automatic_epoch'):
             key='oldautomatic:'+result['automatic_epoch']
         attribution=result.get('attribution','manual')
@@ -78,6 +87,7 @@ class MatchRepository:
             any_match=self.db.execute('SELECT 1 FROM matches WHERE session_id=? LIMIT 1',(session_id,)).fetchone()
             attribution='bootstrap' if not any_match or existing and self.db.execute(
                 'SELECT attribution FROM matches WHERE id=?',existing).fetchone()[0]=='bootstrap' else 'needs_review'
+            if len(reviewed)>1:attribution='needs_review'
             result['attribution']=attribution
         if not key: key='manual:'+uuid.uuid4().hex
         result['match_key']=key

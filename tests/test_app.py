@@ -143,6 +143,7 @@ def test_gui_import_bind_correct_history_and_resume(tk_cleanup, tmp_path, monkey
         # explicit; this does not claim actual Apex gameplay was tested.
         from tracker.monitor import SummaryWatcher
         from tests.test_automatic import Sequence
+        app.store.set_setting('capture_mode','screen')  # injected fixed-screen capture fixture
         source = Sequence()
         source.image = app_module.open_image(SAMPLE)
         source.match = False

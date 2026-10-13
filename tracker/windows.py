@@ -102,6 +102,58 @@ def apex_foreground(bbox=None):
     return hwnd
 
 
+APEX_TITLES = {'apex legends', 'apex legends™', 'apex legends - dx12', 'apex legends (dx12)'}
+
+
+def apex_window(previous=None):
+    """Bind a top-level HWND by exact public title, even when another app is front.
+
+    Multiple matches are ambiguous; never select an arbitrary desktop surface.
+    Minimized windows remain bound but are not sampled by the capture adapter.
+    """
+    if os.name != 'nt': return None
+    user=ctypes.WinDLL('user32',use_last_error=True)
+    user.GetWindowTextW.argtypes=[wintypes.HWND,wintypes.LPWSTR,ctypes.c_int]
+    user.IsWindowVisible.argtypes=[wintypes.HWND];user.IsWindow.argtypes=[wintypes.HWND]
+    def valid(hwnd):
+        if not hwnd or not user.IsWindow(hwnd) or not user.IsWindowVisible(hwnd):return False
+        title=ctypes.create_unicode_buffer(512);user.GetWindowTextW(hwnd,title,len(title))
+        return title.value.strip().casefold() in APEX_TITLES
+    if valid(previous):return previous
+    found=[]
+    callback_type=ctypes.WINFUNCTYPE(wintypes.BOOL,wintypes.HWND,wintypes.LPARAM)
+    def visit(hwnd,_):
+        if valid(hwnd):found.append(hwnd)
+        return True
+    callback=callback_type(visit);user.EnumWindows(callback,0)
+    return found[0] if len(found)==1 else None
+
+
+def window_minimized(hwnd):
+    user=ctypes.WinDLL('user32',use_last_error=True)
+    user.IsIconic.argtypes=[wintypes.HWND]
+    return bool(user.IsIconic(hwnd))
+
+
+def window_client_crop(hwnd, size):
+    """Translate WGC's extended window frame to physical client coordinates."""
+    user=ctypes.WinDLL('user32',use_last_error=True)
+    user.GetClientRect.argtypes=[wintypes.HWND,ctypes.POINTER(wintypes.RECT)]
+    user.ClientToScreen.argtypes=[wintypes.HWND,ctypes.POINTER(wintypes.POINT)]
+    dwm=ctypes.WinDLL('dwmapi',use_last_error=True)
+    dwm.DwmGetWindowAttribute.argtypes=[wintypes.HWND,wintypes.DWORD,ctypes.c_void_p,wintypes.DWORD]
+    rect,client,origin=wintypes.RECT(),wintypes.RECT(),wintypes.POINT(0,0)
+    if dwm.DwmGetWindowAttribute(hwnd,9,ctypes.byref(rect),ctypes.sizeof(rect))!=0:
+        raise OSError('无法获取窗口捕获边界')
+    if not user.GetClientRect(hwnd,ctypes.byref(client)) or not user.ClientToScreen(hwnd,ctypes.byref(origin)):
+        raise OSError('无法获取游戏客户区')
+    # Never use a frame acquired before a resize/move changed its coordinate space.
+    if size != (rect.right-rect.left,rect.bottom-rect.top):return None
+    bounds=(max(0,origin.x-rect.left),max(0,origin.y-rect.top),
+            min(size[0],origin.x-rect.left+client.right),min(size[1],origin.y-rect.top+client.bottom))
+    return bounds if bounds[2]>bounds[0] and bounds[3]>bounds[1] else None
+
+
 def apex_capture_bbox(hwnd, monitor):
     """Capture the visible game client area, excluding a windowed game's desktop."""
     user = ctypes.WinDLL('user32', use_last_error=True)

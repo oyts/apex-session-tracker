@@ -20,6 +20,7 @@ class RecognitionService:
         destination=self.image_directory/(uuid.uuid4().hex+'.png')
         digest=image_digest(image)
         if digest in known_hashes:
+            self.emit('duplicate_evidence',(sid,known_hashes[digest],context))
             self.emit('duplicate',(sid,known_hashes[digest],'相同图像像素',live));return
         image.save(destination)
         self.emit('saved',dict(elapsed=time.perf_counter()-started,live=live))
