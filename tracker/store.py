@@ -510,7 +510,7 @@ class Store:
     def update_recognition(self,capture_id,result):
         previous=self.capture(capture_id)['result']
         for key in ('source','manual_revision','keep_separate','manual_discarded','automatic_epoch','verified_match_group',
-                    'match_key','attribution','episode_key','observation_version'):
+                    'match_key','attribution','episode_key','observation_version','game_mode'):
             if key in previous: result[key]=previous[key]
         with self.db:
             self.db.execute('UPDATE captures SET result=? WHERE id=?',(json.dumps(result,ensure_ascii=False),capture_id))

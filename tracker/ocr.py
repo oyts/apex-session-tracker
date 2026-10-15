@@ -7,6 +7,8 @@ from pathlib import Path
 
 from PIL import Image, ImageOps
 
+RECOGNITION_VERSION = 7
+
 
 def open_image(path):
     with Image.open(path) as image:
@@ -57,6 +59,33 @@ class Recognizer:
             return self.lines(image)
         finally:
             detector.limit_type=previous
+
+    def verify_whole_triple(self, image, line, triple):
+        """Preserve the complete row as context; require two exact, strong rereads.
+
+        A shortened prefix can be less recognizable than the full 0/3/0 row.
+        Padding keeps the text away from the recognizer boundary. This does not
+        lower admission thresholds or replace O with 0.
+        """
+        import numpy as np
+        crop=image.crop(tuple(round(v) for v in (max(0,line['x']-4),max(0,line['y']-4),
+                                                   min(image.width,line['right']+4),min(image.height,line['bottom']+4))))
+        if crop.width<1 or crop.height<1:return None
+        gray=ImageOps.expand(ImageOps.autocontrast(crop.convert('L')),border=8,fill=0)
+        scores=[]
+        for variant in (gray,ImageOps.invert(gray)):
+            output=self.engine(np.asarray(variant.convert('RGB')),use_det=False,use_cls=False)
+            if not output.txts or output.scores is None or len(output.scores)!=1 or len(output.txts)!=1:
+                return None
+            score=float(output.scores[0])
+            parsed=parse_triple(output.txts[0])
+            if not .94<=score<=1. or parsed is None:
+                return None
+            scores.append(score)
+            if parsed!=triple:
+                return dict(method='whole-triple-conflict',conflict=True,scores=scores,
+                            raw_score=line['score'],observed=list(parsed))
+        return dict(method='gray-and-inverse-whole-triple-agreement',scores=scores,raw_score=line['score'])
 
     def verify_kills_assists(self, image, line, triple):
         """Re-read just the requested fields; disagreement never raises confidence."""
@@ -176,13 +205,21 @@ class Recognizer:
                 name_line = name_lines[0] if name_lines else None
                 triple = parse_triple(triple_line["text"]) if triple_line else None
                 verification = None
+                numeric_conflict = False
                 if triple and .85 <= triple_line['score'] < .94:
                     try:
-                        verification = self.verify_kills_assists(image, triple_line, triple)
+                        verification = self.verify_whole_triple(image,triple_line,triple)
+                        numeric_conflict=bool(verification and verification.get('conflict'))
+                        if verification is None:
+                            verification = self.verify_kills_assists(image, triple_line, triple)
+                        if verification:
+                            logging.info('Numeric verification %s card=%s method=%s raw=%.5f scores=%s',
+                                         'conflict' if numeric_conflict else 'accepted',
+                                         i,verification['method'],triple_line['score'],verification['scores'])
                     except Exception:
                         logging.exception('Numeric refinement failed; retaining original confidence')
-                triple_score = min(verification['scores']) if verification else triple_line['score'] if triple_line else 0
-                if not triple or triple_score < .94:
+                triple_score = min(verification['scores']) if verification and not numeric_conflict else triple_line['score'] if triple_line else 0
+                if (not triple or triple_score < .94) and not numeric_conflict:
                     try:
                         refined=self.separated_triple(image,label,min(width,220))
                         if refined and (triple is None or refined[0][:2]==triple[:2]):
@@ -211,6 +248,8 @@ class Recognizer:
                                      triple_score)}
                 if verification:
                     card['kills_assists_verification'] = verification
+                if numeric_conflict:
+                    warnings.append(f'第{i+1}张卡片数字复读不一致，需核对原图。')
                 if damage_verification:
                     card['damage_verification']=damage_verification
                 if None in (card["damage"], card["kills"], card["assists"]):
@@ -221,7 +260,7 @@ class Recognizer:
                           "damage": None, "kills": None, "assists": None, "score": 0}
                      for i in range(3)]
         result={"cards": cards, "warnings": warnings,
-                "elapsed": round(time.perf_counter() - started, 3), "lines": lines,'recognition_version':6}
+                "elapsed": round(time.perf_counter() - started, 3), "lines": lines,'recognition_version':RECOGNITION_VERSION}
         return result
 
 

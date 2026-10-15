@@ -14,7 +14,7 @@ from tkinter import filedialog, messagebox, ttk
 
 from PIL import Image, ImageGrab, ImageTk
 
-from .ocr import Recognizer, open_image
+from .ocr import Recognizer, open_image, RECOGNITION_VERSION
 from .dedup import image_digest
 from .store import Store
 from .session import reconcile
@@ -189,7 +189,7 @@ class App:
         self.wrapped_label(container,textvariable=self.status,foreground=TEXT).pack(fill='x',pady=(12,6))
         footer=ttk.Frame(container)
         footer.pack(fill='x')
-        ttk.Label(footer,text='本地保存 · 本地识别 · v14-beta4',style='Muted.TLabel',font=('Microsoft YaHei UI',9)).pack(side='left')
+        ttk.Label(footer,text='本地保存 · 本地识别 · v14-beta5',style='Muted.TLabel',font=('Microsoft YaHei UI',9)).pack(side='left')
         ttk.Label(footer,text='非官方社区工具',style='Muted.TLabel',font=('Microsoft YaHei UI',9)).pack(side='right')
 
     @staticmethod
@@ -612,7 +612,8 @@ class App:
         self.repair_seen.add(sid)
         captures=[self.store.capture(c['id']) for c in self.store.visible_captures(sid)]
         captures=[c for c in captures if Path(c['image']).is_file() and
-                  (c['result'].get('recognition_version',0)<6 or force and c['status']=='pending')]
+                  (c['result'].get('recognition_version',0)<6 or c['status']=='pending' and
+                   (c['result'].get('recognition_version',0)<RECOGNITION_VERSION or force))]
         if not captures:
             return
         self.busy=True
