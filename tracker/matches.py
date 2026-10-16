@@ -33,6 +33,11 @@ def migrate(db):
         db.execute('ALTER TABLE captures ADD COLUMN match_id INTEGER REFERENCES matches(id)')
     if 'game_mode' not in {r[1] for r in db.execute('PRAGMA table_info(matches)')}:
         db.execute("ALTER TABLE matches ADD COLUMN game_mode TEXT NOT NULL DEFAULT 'unknown'")
+    columns = {r[1] for r in db.execute('PRAGMA table_info(matches)')}
+    for name, definition in (('team_kills','INTEGER'), ('team_kills_source',"TEXT NOT NULL DEFAULT 'missing'"),
+                             ('team_kills_reviewed','INTEGER NOT NULL DEFAULT 0'), ('team_kills_override','INTEGER')):
+        if name not in columns:
+            db.execute(f'ALTER TABLE matches ADD COLUMN {name} {definition}')
     rows=db.execute('SELECT * FROM captures ORDER BY id').fetchall()
     with db:
         for row in rows:
@@ -57,7 +62,7 @@ def migrate(db):
             db.execute('UPDATE captures SET match_id=? WHERE id=?',(mid,row['id']))
             db.execute('INSERT INTO ocr_results(capture_id,created,version,payload) VALUES (?,?,?,?)',
                        (row['id'],row['created'],json.loads(row['result']).get('recognition_version',0),row['result']))
-        db.execute('PRAGMA user_version=15')
+        db.execute('PRAGMA user_version=16')
 
 
 class MatchRepository:
@@ -129,8 +134,36 @@ class MatchRepository:
                 status=row['status']
                 if result.get('attribution')=='needs_review' and status!='confirmed':status='unattributed'
                 self.db.execute('UPDATE matches SET state=?,canonical_capture=? WHERE id=?',(status,row['id'],mid))
+                self._sync_team_kills(mid,row['id'])
                 if status=='confirmed':
                     self.db.execute('''INSERT INTO match_stats SELECT ?,player_id,damage,kills,assists FROM stats WHERE capture_id=?''',(mid,row['id']))
+
+    def _sync_team_kills(self,mid,canonical):
+        from .participation import squad_kills
+        match=self.db.execute('SELECT team_kills_reviewed,team_kills_override FROM matches WHERE id=?',(mid,)).fetchone()
+        if match['team_kills_reviewed']:
+            value,source=match['team_kills_override'],'manual'
+        else:
+            evidence=[squad_kills(json.loads(r[0])) for r in self.db.execute(
+                'SELECT result FROM captures WHERE id=? OR merged_into=?',(canonical,canonical))]
+            values={value for value,source in evidence if value is not None}
+            conflict=any(source=='conflict' for value,source in evidence)
+            value=next(iter(values)) if len(values)==1 and not conflict else None
+            source=('conflict' if len(values)>1 or conflict else
+                    'summary-header' if any(s=='summary-header' for v,s in evidence) else
+                    'three-complete-cards') if value is not None or conflict or len(values)>1 else 'missing'
+        self.db.execute('UPDATE matches SET team_kills=?,team_kills_source=? WHERE id=?',(value,source,mid))
+
+    def team_kills(self,mid):
+        row=self.db.execute('SELECT team_kills,team_kills_source,team_kills_reviewed FROM matches WHERE id=?',(mid,)).fetchone()
+        return dict(row) if row else dict(team_kills=None,team_kills_source='missing',team_kills_reviewed=0)
+
+    def review_team_kills(self,mid,value,automatic=False):
+        from .participation import valid_kills
+        if value is not None and not valid_kills(value):
+            raise ValueError('小队总击杀须为非负整数（最大999999），未知时留空。')
+        self.db.execute('UPDATE matches SET team_kills_reviewed=?,team_kills_override=? WHERE id=?',
+                        (0 if automatic else 1,None if automatic else value,mid))
 
     def audit(self,session_id,kind,payload):
         with self.db:

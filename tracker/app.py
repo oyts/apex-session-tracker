@@ -24,6 +24,7 @@ from .pages import classify_image
 from .domain import pending_reason, POLICY
 from .journal import EvidenceSpool
 from .services import RecognitionService
+from .participation import format_rate, percentage
 from .dpi import DpiController
 
 from .theme import BG, PANEL, TEXT, MUTED, ACCENT, AMBER, FIELD, AngularPanel, ScrollBody, brand, install, section
@@ -66,8 +67,9 @@ class App:
         self.player_labels = []
         self.player_rows = []
         self.average_labels = []
+        self.participation_labels = []
         self.metric_labels = []
-        self.metric_natural_width = int(root.tk.call('font','measure',('Consolas',18,'bold'),'0'))*28+80
+        self.metric_natural_width = int(root.tk.call('font','measure',('Consolas',18,'bold'),'0'))*36+100
         self.session_var = tk.StringVar()
         self.status = tk.StringVar(value="正在加载本地识别模型…")
         self.headline = tk.StringVar(value="共计：0 场游戏")
@@ -143,7 +145,7 @@ class App:
             metrics = ttk.Frame(row.content, style='Panel.TFrame')
             metrics.pack(side='right', padx=(16, 0))
             values = []
-            for text in ('伤害', '击杀', '助攻', '场均伤害'):
+            for text in ('伤害', '击杀', '助攻', '场均伤害', '参团率'):
                 cell = ttk.Frame(metrics, style='Panel.TFrame')
                 cell.pack(side='left', padx=(10, 10))
                 ttk.Label(cell, text=text, style='MetricHeading.TLabel',
@@ -162,6 +164,7 @@ class App:
             self.player_labels.append(label)
             self.metric_labels.append(values[:3])
             self.average_labels.append(values[3])
+            self.participation_labels.append(values[4])
         actionbar = section(container, '每局记录')
         actionbar.pack_configure(pady=(16, 8))
         ttk.Button(actionbar, text='导入截图', command=self.import_image).pack(side='right')
@@ -189,7 +192,7 @@ class App:
         self.wrapped_label(container,textvariable=self.status,foreground=TEXT).pack(fill='x',pady=(12,6))
         footer=ttk.Frame(container)
         footer.pack(fill='x')
-        ttk.Label(footer,text='本地保存 · 本地识别 · v14-beta5.1',style='Muted.TLabel',font=('Microsoft YaHei UI',9)).pack(side='left')
+        ttk.Label(footer,text='本地保存 · 本地识别 · v14-beta6',style='Muted.TLabel',font=('Microsoft YaHei UI',9)).pack(side='left')
         ttk.Label(footer,text='非官方社区工具',style='Muted.TLabel',font=('Microsoft YaHei UI',9)).pack(side='right')
         self.wrapped_label(container,text='BUG 反馈与沟通：QQ 1050315764',foreground=MUTED,
                            font=('Microsoft YaHei UI',9)).pack(fill='x',pady=(6,0))
@@ -222,7 +225,7 @@ class App:
 
     def _dpi_changed(self):
         dpi = self.root.dpi_controller
-        self.metric_natural_width = dpi.font(('Consolas',18,'bold')).measure('0')*28+dpi.px(80)
+        self.metric_natural_width = dpi.font(('Consolas',18,'bold')).measure('0')*36+dpi.px(100)
         for row in self.player_rows:
             self.layout_player(row, row.content.winfo_width())
 
@@ -275,12 +278,15 @@ class App:
         mode = state['mode'] if state else int(self.mode.get()[0])
         if not state or not state['resolved']:
             totals = [{'name': '等待确定玩家', 'damage': None, 'kills': None, 'assists': None,
-                       'average_damage': None} for _ in range(mode)]
+                       'average_damage': None, 'participation':None} for _ in range(mode)]
         self.headline.set(f"共计：{count} 场游戏")
         captures = self.store.visible_captures(self.selected_session)
         pending = sum(c["status"] == "pending" for c in captures)
         shortcut = self.store.setting("hotkey", "Ctrl+End")
         self.caption.set(f"截图快捷键：{shortcut}（{'记录中生效' if active else '开始记录后生效'}）    待确认：{pending} 张    当前统计：{len(totals)} 人")
+        missing=totals[0].get('participation_missing',0) if totals else 0
+        if missing:
+            self.caption.set(self.caption.get()+f'；参团率缺 {missing} 局小队总击杀，请在“查看 / 修正”补充。')
         for label in self.player_labels:
             label.pack_forget()
         for row in self.player_rows:
@@ -292,6 +298,7 @@ class App:
             for value, key in zip(self.metric_labels[index], ('damage','kills','assists')):
                 value['text'] = f"{player[key]:,}" if player[key] is not None else '—'
             average['text'] = f"{player['average_damage']:,.1f}" if player['average_damage'] is not None else '—'
+            self.participation_labels[index]['text']=format_rate(player.get('participation'))
             self.layout_player(row, row.content.winfo_width())
         selection = self.history.selection()
         self.history.delete(*self.history.get_children())
@@ -302,6 +309,7 @@ class App:
                 stats = self.store.capture(capture["id"])["stats"]
                 names = {p["id"]: p["name"] for p in totals}
                 summary = "  /  ".join(f"{names[s['player_id']]}：{s['damage']}伤害 {s['kills']}击杀 {s['assists']}助攻"
+                                      f" 参团{format_rate(percentage(s['kills'],s['assists'],self.store.matches.team_kills(capture['match_id'])['team_kills']))}"
                                       for s in stats)
             else:
                 summary = "；".join(result.get("warnings", [])) or ("等待跨局确定玩家，可继续截图或手动确认" if state and not state['resolved'] else "请确认玩家归属与数字")
@@ -755,11 +763,13 @@ class App:
                     self.busy = False
                     self.selected_session = sid
                     self.refresh()
+                    observation_id=capture_id
                     capture_id=self.store.canonical_id(capture_id)
                     self.history.selection_set(str(capture_id))
                     self.history.see(str(capture_id))
                     elapsed = result.get("elapsed", 0)
-                    self.status.set(f"玩家已确定，本次计入 {len(saved)} 局（识别{elapsed:.2f}秒）。" if auto_saved else
+                    self.status.set(f'已归入记录 #{capture_id}，同局副本已收起，未重复累计。' if observation_id!=capture_id else
+                                    f"玩家已确定，本次计入 {len(saved)} 局（识别{elapsed:.2f}秒）。" if auto_saved else
                                     f"截图 #{capture_id} 已识别（{elapsed:.2f}秒）。" + (pending_reason(self.store.capture(capture_id)['result'],state['resolved'],False) or state['message']))
                 elif kind == "error":
                     self.busy = False
@@ -887,6 +897,21 @@ class Review:
                 ttk.Entry(grid, textvariable=values[field], width=9).grid(row=index+1, column=col, padx=8)
             self.rows.append((player, values))
         self.remember = tk.BooleanVar(value=True)
+        team=app.store.matches.team_kills(capture['match_id'])
+        self.team_automatic=tk.BooleanVar(value=not team['team_kills_reviewed'])
+        self.team_was_automatic=not team['team_kills_reviewed']
+        self.team_value=tk.StringVar(value=str(team['team_kills']) if team['team_kills'] is not None else '')
+        teamrow=ttk.Frame(frame);teamrow.pack(fill='x',pady=(2,8))
+        ttk.Label(teamrow,text='完整小队总击杀：').pack(side='left')
+        self.team_entry=ttk.Entry(teamrow,textvariable=self.team_value,width=9)
+        self.team_entry.pack(side='left',padx=(0,10))
+        def team_mode():
+            self.team_entry.configure(state='disabled' if self.team_automatic.get() else 'normal')
+        ttk.Checkbutton(teamrow,text='自动读取（取消后可填写；未知留空）',variable=self.team_automatic,
+                        command=team_mode).pack(side='left')
+        team_mode()
+        self.app.wrapped_label(frame,text='参团率＝个人（击杀＋助攻）÷完整小队总击杀；累计采用总和相除。分母为零或缺失时显示“—”。',
+                               style='Muted.TLabel').pack(fill='x',pady=(0,8))
         ttk.Checkbutton(frame, text="记住本次画面昵称与玩家的对应关系（下次自动匹配）", variable=self.remember).pack(anchor="w")
         warning = "；".join(capture["result"].get("warnings", []))
         if capture["duplicate_of"]:
@@ -923,6 +948,12 @@ class Review:
             ids = {r['player_id'] for r in rows}
             if len(rows) != self.count or len(ids) != self.count or (self.required and ids != set(self.required)):
                 raise ValueError(f"请选择本次统计的 {self.count} 位不同玩家，每人一张卡片；路人无需填写。")
+            team_kills='unchanged' if self.team_was_automatic else 'automatic'
+            if not self.team_automatic.get():
+                text=self.team_value.get().strip()
+                if text and (not text.isascii() or not text.isdigit() or int(text)>999999):
+                    raise ValueError('小队总击杀须为非负整数（最大999999），未知时留空。')
+                team_kills=int(text) if text else None
             current=self.app.store.capture(self.capture['id'])
             if self.match_choice.get() not in self.match_choices:
                 raise ValueError('未观察到开局，请先选择“确认是新的一局”或归入已有比赛。')
@@ -938,7 +969,7 @@ class Review:
             if not proven and duplicate:
                 current['result']['keep_separate']=True
                 self.app.store.update_recognition(current['id'],current['result'])
-            self.app.store.confirm(self.capture["id"], rows, self.remember.get(), allow_duplicate=True, manual=True)
+            self.app.store.confirm(self.capture["id"], rows, self.remember.get(), allow_duplicate=True, manual=True,team_kills=team_kills)
             if self.app.watcher and self.app.store.active_session() and self.app.store.active_session()['id']==self.capture['session_id']:
                 self.app.watcher.accept_summary(self.capture['result'])
             _, saved = self.app.reconcile_session(self.capture['session_id'])

@@ -77,7 +77,8 @@ def test_reread_preserves_mode_and_manual_stats(tmp_path):
 def test_history_upgrade_targets_pending_v6_without_rereading_confirmed_v6(tmp_path):
     from tracker.app import App
     path=tmp_path/'synthetic.png';path.touch()
-    states=[('pending',6),('confirmed',6),('pending',7),('confirmed',5)]
+    from tracker.ocr import RECOGNITION_VERSION
+    states=[('pending',6),('confirmed',6),('pending',RECOGNITION_VERSION),('confirmed',5)]
     captures=[dict(id=i,image=str(path),status=status,result=dict(recognition_version=v)) for i,(status,v) in enumerate(states)]
     app=App.__new__(App);app.selected_session=1;app.busy=False;app.engine_ready=True;app.repair_seen=set()
     app.store=SimpleNamespace(visible_captures=lambda _:captures,capture=lambda i:captures[i])

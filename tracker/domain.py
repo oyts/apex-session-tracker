@@ -15,6 +15,7 @@ class CapturePolicy:
     number_score: float = .94
     identity_score: float = .85
     summary_gap_seconds: float = 12.
+    summary_return_seconds: float = 120.
     dropship_confirm_seconds: float = 2.
 
 

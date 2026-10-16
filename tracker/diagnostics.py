@@ -109,6 +109,23 @@ def run_roster_smoke(output: Path):
                 finally:
                     dpi_module.window_metrics = native_metrics
                 following = monitor_follow_fixture(root)
+                # Exercise the shipped UI and normalized denominator using a
+                # one-player roster with three squad cards, then manual repair.
+                participation_sid=app.store.start_session([1])
+                for index,names in enumerate((['OtherA','BoundPlayer','OtherB'],['OtherC','OtherD','BoundPlayer'])):
+                    item=data(names,[10,20,30])
+                    for c,k in zip(item['cards'],(1,2,3) if index==0 else (10,5,5)):
+                        c['kills']=k;c['assists']=(1 if index==0 else 2) if c['name']=='BoundPlayer' else 0
+                    pcid=app.store.add_capture(participation_sid,'','participation-'+str(index),item)
+                    if index==0:first_participation=pcid
+                app.reconcile_session(participation_sid)
+                assert app.store.totals(participation_sid)[1][0]['participation']==10/26
+                repaired=app.store.capture(first_participation)['stats'];repaired[0]['assists']=3
+                app.store.confirm(first_participation,repaired,manual=True,team_kills=8)
+                app.selected_session=participation_sid;app.refresh()
+                assert app.store.totals(participation_sid)[1][0]['participation']==12/28
+                assert app.participation_labels[0]['text']=='42.9%'
+                app.store.end_session(participation_sid)
                 report.update(ok=True, hidden_ui=True, ended_history_replayed=True,
                               card_positions_changed=True, games=2, damage=456, kills=1,
                               assists=0, average_damage=228, manual_stats_preserved=True,
@@ -116,7 +133,8 @@ def run_roster_smoke(output: Path):
                               per_window_font_dpi_verified=True, native_dpi_awareness=awareness,
                               monitor_follow=following, equal_numbers_distinct_images_counted=True,
                               equal_zero_games=2, verified_duplicate_handoff=True,
-                              duplicate_original_stats_preserved=True)
+                              duplicate_original_stats_preserved=True, participation_weighted_and_correctable=True,
+                              participation_full_squad_in_solo=True,participation_ui='42.9%')
             finally:
                 app.close()
     except Exception as error:

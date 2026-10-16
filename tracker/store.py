@@ -24,10 +24,11 @@ class Store:
         self.screenshots.mkdir(exist_ok=True)
         self.db = sqlite3.connect(directory / "tracker.sqlite3")
         self.db.row_factory = sqlite3.Row
-        if self.db.execute('PRAGMA user_version').fetchone()[0] < 15 and self.db.execute(
+        if self.db.execute('PRAGMA user_version').fetchone()[0] < 16 and self.db.execute(
                 "SELECT 1 FROM sqlite_master WHERE name='captures'").fetchone():
             backups=directory/'backups';backups.mkdir(exist_ok=True)
-            target=backups/('before-v14.sqlite3' if self.db.execute('PRAGMA user_version').fetchone()[0]<14 else 'before-schema15.sqlite3')
+            version=self.db.execute('PRAGMA user_version').fetchone()[0]
+            target=backups/('before-v14.sqlite3' if version<14 else 'before-schema15.sqlite3' if version<15 else 'before-schema16.sqlite3')
             if not target.exists():
                 with closing(sqlite3.connect(target)) as backup:self.db.backup(backup)
         self.db.executescript("""
@@ -81,6 +82,7 @@ class Store:
         from .matches import migrate, MatchRepository
         migrate(self.db)
         self.matches=MatchRepository(self.db)
+        self._surface_checked = None
         for session in self.sessions():self.matches.sync(session['id'])
         self.storage_warning=''
         from .media import prepare_directory
@@ -432,11 +434,12 @@ class Store:
         """Retain every original; hide proven copies and count only the canonical.
 
         A manual correction wins over automatic values. Keep-separate records from
-        explicit new-match confirmation remain independent. Only exact image
-        hashes or an explicitly verified match group merge; OCR text, diagnostic
-        footer, survival time and totals never do.
+        explicit new-match confirmation remain independent. Exact image hashes,
+        verified groups and guarded visual-return evidence may merge. Numeric
+        stats, OCR strings, diagnostic footer and elapsed time alone never do.
         """
         self._apply_episode_reviews(session_id)
+        self._apply_visual_returns(session_id)
         captures=self.captures(session_id)
         if any(c['match_id'] is None for c in captures):
             from .matches import migrate
@@ -483,6 +486,57 @@ class Store:
         self.matches.sync(session_id)
         return {cid:parent for cid,parent in changes.items() if parent}
 
+    def _apply_visual_returns(self,session_id):
+        """Reconnect only the immediately preceding summary's visual evidence.
+
+        New verified starts and human attribution are barriers. Unknown,
+        different surfaces break the chain, rather than search old equal stats.
+        A cached pass avoids rereading image files on every UI refresh.
+        """
+        captures=list(reversed(self.captures(session_id)))
+        events=self.db.execute("SELECT created FROM lifecycle_events WHERE session_id=? AND kind='match_started'",
+                               (session_id,)).fetchall()
+        signature=(session_id,tuple((c['id'],c['hash'],c['result'],c['status']) for c in captures),tuple(r[0] for r in events))
+        if self._surface_checked==signature:return
+        self._surface_checked=signature
+        from .summary_surface import surface_evidence
+        from .domain import POLICY
+        anchor=None
+        for row in captures:
+            data=json.loads(row['result']);current=dict(row,result=data)
+            if data.get('keep_separate') or data.get('manual_discarded') and row['status']=='discarded':
+                anchor=None;continue
+            if data.get('attribution') in ('start_observed','reviewed','bootstrap','visual_return'):
+                anchor=current;continue
+            if not anchor or data.get('attribution') not in ('needs_review','start_not_observed'):
+                anchor=None;continue
+            if data.get('manual_revision') or data.get('source')!='automatic':
+                anchor=None;continue
+            try:
+                before=datetime.fromisoformat(anchor['created']);after=datetime.fromisoformat(row['created'])
+                gap=(after-before).total_seconds()
+                new_start=any(before < datetime.fromisoformat(event[0]) <= after for event in events)
+            except (ValueError,TypeError):
+                anchor=None;continue
+            # Time only rejects old/unknown evidence. It never establishes identity.
+            if not 0 <= gap <= POLICY.summary_return_seconds:
+                anchor=None;continue
+            if new_start:
+                anchor=None;continue
+            proof=surface_evidence(anchor,current)
+            if proof is None:
+                anchor=None;continue
+            key=anchor['result'].get('match_key')
+            if not key:anchor=None;continue
+            data.update(match_key=key,attribution='visual_return',visual_return=dict(capture_id=anchor['id'],**proof))
+            with self.db:
+                self.db.execute('UPDATE captures SET match_id=?,result=? WHERE id=?',
+                                (anchor['match_id'],json.dumps(data,ensure_ascii=False),row['id']))
+                self.db.execute('INSERT INTO reviews(capture_id,created,action,payload) VALUES (?,?,?,?)',
+                                (row['id'],now(),'visual_summary_return',json.dumps(data['visual_return'])))
+            current.update(match_id=anchor['match_id'],result=data)
+            anchor=current
+
     def _apply_episode_reviews(self,session_id):
         """Human attribution applies to its proven sampling episode, including
         observations arriving later. Conflicting explicit reviews stay separate.
@@ -510,15 +564,21 @@ class Store:
     def update_recognition(self,capture_id,result):
         previous=self.capture(capture_id)['result']
         for key in ('source','manual_revision','keep_separate','manual_discarded','automatic_epoch','verified_match_group',
-                    'match_key','attribution','episode_key','observation_version','game_mode'):
+                    'match_key','attribution','episode_key','observation_version','game_mode','visual_return'):
             if key in previous: result[key]=previous[key]
         with self.db:
             self.db.execute('UPDATE captures SET result=? WHERE id=?',(json.dumps(result,ensure_ascii=False),capture_id))
             self.matches.record_ocr(capture_id,result)
 
     def restore(self, capture_id):
+        capture=self.capture(capture_id)
+        if capture['status']!='discarded':return
+        result=capture['result'];result.pop('manual_discarded',None)
         with self.db:
-            self.db.execute("UPDATE captures SET status='pending' WHERE id=? AND status='discarded'", (capture_id,))
+            self.db.execute("UPDATE captures SET status='pending',result=? WHERE id=? AND status='discarded'",
+                            (json.dumps(result,ensure_ascii=False),capture_id))
+            self.db.execute('INSERT INTO reviews(capture_id,created,action,payload) VALUES (?,?,?,?)',
+                            (capture_id,now(),'restore','{}'))
 
     def capture(self, capture_id):
         row = self.db.execute("SELECT * FROM captures WHERE id=?", (capture_id,)).fetchone()
@@ -532,8 +592,12 @@ class Store:
         return [dict(r) for r in self.db.execute(
             "SELECT * FROM captures WHERE session_id=? ORDER BY id DESC", (session_id,))]
 
-    def confirm(self, capture_id, rows, remember=False, allow_duplicate=False, manual=False):
+    def confirm(self, capture_id, rows, remember=False, allow_duplicate=False, manual=False, team_kills='unchanged'):
         capture = self.capture(capture_id)
+        if team_kills!='unchanged':
+            from .participation import valid_kills
+            if not manual or team_kills not in (None,'automatic') and not valid_kills(team_kills):
+                raise ValueError('小队总击杀只允许人工填写非负整数或留空。')
         if capture['result'].get('attribution')=='needs_review' and not manual:
             raise ValueError('比赛归属未确认，不能自动计入。')
         required = set(self.session_player_ids(capture["session_id"]))
@@ -558,6 +622,11 @@ class Store:
         if capture["status"] != "confirmed" and capture["duplicate_of"] and not allow_duplicate:
             raise ValueError("此截图与已有截图相同，请确认它是否属于新的一局。")
         with self.db:
+            if team_kills!='unchanged':
+                self.matches.review_team_kills(capture['match_id'],team_kills if team_kills!='automatic' else None,
+                                              automatic=team_kills=='automatic')
+                self.db.execute('INSERT INTO reviews(capture_id,created,action,payload) VALUES (?,?,?,?)',
+                                (capture_id,now(),'team_kills',json.dumps(dict(value=team_kills))))
             if unresolved:
                 self.db.execute('UPDATE sessions SET player_ids=? WHERE id=?',
                                 (json.dumps(sorted(required)), capture['session_id']))
@@ -598,6 +667,7 @@ class Store:
         result=capture['result'];result['match_key']=key;result['attribution']='reviewed'
         # Explicit attribution overrides old episode hints for this observation.
         result.pop('keep_separate',None);result.pop('automatic_epoch',None);result.pop('verified_match_group',None)
+        result.pop('visual_return',None)
         with self.db:
             mid=self.matches.attach(capture['session_id'],result)
             self.db.execute('UPDATE captures SET match_id=?,result=?,merged_into=NULL WHERE id=?',
@@ -618,13 +688,17 @@ class Store:
         count = self.db.execute("SELECT count(*) FROM matches WHERE session_id=? AND state='confirmed'",
                                 (session_id,)).fetchone()[0]
         result = []
+        denominator=self.db.execute("SELECT count(team_kills),COALESCE(sum(team_kills),0) FROM matches "
+                                    "WHERE session_id=? AND state='confirmed'",(session_id,)).fetchone()
         for player in self.session_players(session_id):
             row = self.db.execute("SELECT COALESCE(sum(s.damage),0),COALESCE(sum(s.kills),0),"
                                   "COALESCE(sum(s.assists),0) FROM match_stats s JOIN matches c ON c.id=s.match_id "
                                   "WHERE c.session_id=? AND c.state='confirmed' AND s.player_id=?",
                                   (session_id, player["id"])).fetchone()
             result.append({**player, "damage": row[0], "kills": row[1], "assists": row[2],
-                           "average_damage": row[0] / count if count else None})
+                           "average_damage": row[0] / count if count else None,
+                           "participation": (row[1]+row[2])/denominator[1] if denominator[0]==count and denominator[1]>0 else None,
+                           "team_kills": denominator[1], "participation_missing": count-denominator[0]})
         return count, result
 
     def close(self):
