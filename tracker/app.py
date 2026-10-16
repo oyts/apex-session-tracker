@@ -189,8 +189,10 @@ class App:
         self.wrapped_label(container,textvariable=self.status,foreground=TEXT).pack(fill='x',pady=(12,6))
         footer=ttk.Frame(container)
         footer.pack(fill='x')
-        ttk.Label(footer,text='本地保存 · 本地识别 · v14-beta5',style='Muted.TLabel',font=('Microsoft YaHei UI',9)).pack(side='left')
+        ttk.Label(footer,text='本地保存 · 本地识别 · v14-beta5.1',style='Muted.TLabel',font=('Microsoft YaHei UI',9)).pack(side='left')
         ttk.Label(footer,text='非官方社区工具',style='Muted.TLabel',font=('Microsoft YaHei UI',9)).pack(side='right')
+        self.wrapped_label(container,text='BUG 反馈与沟通：QQ 1050315764',foreground=MUTED,
+                           font=('Microsoft YaHei UI',9)).pack(fill='x',pady=(6,0))
 
     @staticmethod
     def wrapped_label(master, **kwargs):
