@@ -1,6 +1,10 @@
 @echo off
 setlocal
 cd /d "%~dp0"
+if exist "dist\v14-beta8\ApexTracker\ApexTracker.exe" (
+    start "" "dist\v14-beta8\ApexTracker\ApexTracker.exe"
+    exit /b
+)
 if exist "dist\v14-beta7\ApexTracker\ApexTracker.exe" (
     start "" "dist\v14-beta7\ApexTracker\ApexTracker.exe"
     exit /b

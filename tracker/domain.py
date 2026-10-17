@@ -18,7 +18,7 @@ class CapturePolicy:
     summary_return_seconds: float = 120.
     summary_min_visible_seconds: float = 1.5
     summary_header_stable_seconds: float = 1.
-    summary_header_mask_difference: float = .015
+    summary_header_mask_difference: float = .08
     dropship_confirm_seconds: float = 2.
 
 

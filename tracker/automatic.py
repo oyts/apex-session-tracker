@@ -90,13 +90,24 @@ class SummaryDetector:
         band=binary[round(height*.125):round(height*.24),780:990]
         caption=any(self._hits(band,template,.70) for name,variants in templates.items()
                     if name.startswith('squad_kills_') for _,template in variants)
+        # Fade/tint changes move gray letters across the old single threshold.
+        # Match the SAME caption, location and .70 score on alternate exposures;
+        # do not relax page detection or mistake yellow background for a total.
+        if not caption:
+            gray=np.asarray(Image.fromarray(rgb).convert('L'))[round(height*.125):round(height*.24),780:990]
+            for threshold in (70,80,90,100,120,130,140):
+                variant=cv2.GaussianBlur((gray>threshold).astype(np.uint8)*255,(3,3),.65)
+                if any(self._hits(variant,template,.70) for name,variants in templates.items()
+                       if name.startswith('squad_kills_') for _,template in variants):
+                    caption=True;break
         area=rgb[round(height*.13):round(height*.24),902:975].astype(np.int16)
         # The squad total's yellow glyphs, below the green requeue panel and to
         # the right of rank. No requirement that the number be nonzero.
         mask=(area[:,:,0]>=150)&(area[:,:,1]>=95)&(area[:,:,2]<=125)&(area[:,:,0]>area[:,:,2]*1.35)
         ys,xs=np.where(mask)
         visible=bool(caption and len(xs)>=20 and ys.max()-ys.min()>=8) if len(xs) else False
-        return dict(header_visible=visible,header_mask=mask if visible else None)
+        return dict(header_visible=visible,header_mask=mask if visible else None,
+                    header_reason='visible' if visible else 'caption-not-visible' if not caption else 'number-not-visible')
 
 
 def is_summary_result(result):

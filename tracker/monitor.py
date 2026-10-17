@@ -192,7 +192,9 @@ class SummaryWatcher:
         """
         if self.loading_image is not None and self.episode_count==0 and not self.episode_partial_saved:
             self.first=self.loading_image;self.best=None
-            self.best_proof=dict(state='incomplete',reason='left-before-header-stable')
+            self.best_proof=dict(state='incomplete',reason='left-before-header-stable',
+                                 gate_reason=self.loading_reason)
+            logging.info('Summary incomplete episode=%s gate=%s',self.episode_key,self.loading_reason)
             self._flush()
 
     def _read(self):
@@ -244,7 +246,9 @@ class SummaryWatcher:
                 self.episode_partial_saved=False
             requires_header=getattr(self.detector,'requires_header',False)
             ready=not requires_header or self.header_gate.observe(found,time.monotonic())
-            if not ready:self.loading_image=image
+            if not ready:
+                self.loading_image=image
+                self.loading_reason=self.header_gate.reason
             if ready and self.episode_count<POLICY.max_episode_observations and (
                     time.monotonic()-self.episode_last>=POLICY.summary_retry_seconds):
                 if self.first is None:self.first=image;self.matches=0;self.score=-1.

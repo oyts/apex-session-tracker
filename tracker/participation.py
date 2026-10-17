@@ -31,6 +31,10 @@ def squad_kills(result):
                       and abs(l.get('cy', -999)-line.get('cy', 0)) <= height*.8]
         if len(candidates) == 1:
             headers.append(int(candidates[0]['text']))
+    proof=result.get('squad_kills_verification',{})
+    if (proof.get('method')=='caption-anchored-color-and-mask-agreement-v1' and
+            valid_kills(proof.get('value')) and .94<=proof.get('score',0)<=1):
+        headers.append(proof['value'])
     values = set(headers)
     if len(values) > 1:
         return None, 'conflict'

@@ -7,7 +7,7 @@ from pathlib import Path
 
 from PIL import Image, ImageOps
 
-RECOGNITION_VERSION = 9
+RECOGNITION_VERSION = 10
 
 
 def open_image(path):
@@ -119,7 +119,8 @@ class Recognizer:
         reads=[]
         for variant in (gray,ImageOps.invert(gray)):
             out=self.engine(np.asarray(variant.convert('RGB')),use_det=False,use_cls=False)
-            if not out.txts or not out.scores or out.scores[0] < .94:
+            if (not out.txts or out.scores is None or len(out.txts)!=1 or len(out.scores)!=1
+                    or not .94<=out.scores[0]<=1):
                 return None
             number=parse_damage(out.txts[0])
             if number is None:
@@ -263,6 +264,12 @@ class Recognizer:
                 "elapsed": round(time.perf_counter() - started, 3), "lines": lines,'recognition_version':RECOGNITION_VERSION}
         from .participation import squad_kills
         result['team_kills_policy']='summary-header-only'
+        from .squad_header import verify_header
+        try:
+            proof=verify_header(image,lines,self.agree_number)
+            if proof:result['squad_kills_verification']=proof
+        except Exception:
+            logging.exception('Squad header refinement failed; keeping original OCR')
         result['team_kills'],result['team_kills_source']=squad_kills(result)
         if result['team_kills_source']=='conflict':
             warnings.append('小队总击杀出现多个互相矛盾的读数，需核对原图。')
