@@ -12,6 +12,7 @@ from .domain import MatchCycle, POLICY
 from .capture import WindowsFrameSource
 from .automatic import SummaryDetector
 from .dedup import image_digest
+from .summary_readiness import SummaryReadiness
 from .windows import physical_pixels, apex_foreground, window_display, apex_capture_bbox, display_label
 from PIL import ImageGrab
 
@@ -39,14 +40,24 @@ class SummaryWatcher:
         self.episode_key=phase.get('episode_key')
         self.episode_context=phase.get('episode_context')
         self.episode_hashes=set(phase.get('episode_hashes',[]))
-        self.episode_count=len(self.episode_hashes)
+        self.episode_count=phase.get('episode_count',len(self.episode_hashes))
+        self.episode_partial_saved=phase.get('episode_partial_saved',False)
+        self.partial_hashes=set(phase.get('partial_hashes',[]))
         self.episode_seen_at=phase.get('episode_seen_at',0.)
         if self.episode_key and time.time()-self.episode_seen_at>POLICY.summary_gap_seconds:
             # A restart is an observation gap, never proof of page continuity.
             self.episode_key=None;self.episode_context=None;self.episode_hashes.clear();self.episode_count=0
         self.recent_hashes=list(phase.get('recent_hashes',[]))
+        if phase and getattr(self.detector,'requires_header',False) and phase.get('summary_readiness_version')!=1:
+            # Beta6's three early shots were not three complete-header attempts.
+            # Preserve attribution and exact dedup, but allow the new gate a
+            # fresh bounded attempt budget when upgrading during a summary.
+            self.episode_count=0;self.episode_partial_saved=False
         self.episode_last=-100.
         self.first=self.best=None
+        self.loading_image=None
+        self.best_proof=None
+        self.header_gate=SummaryReadiness()
         self.score=-1.;self.matches=0;self.misses=0
         self.available=threading.Event();self.available.set()
         self.stop_event=threading.Event()
@@ -75,7 +86,10 @@ class SummaryWatcher:
     def phase(self):
         with self.cycle_lock:
             return dict(version=14,cycle=self.cycle.snapshot(),episode_key=self.episode_key,
+                        summary_readiness_version=1,
                         episode_context=self.episode_context,episode_hashes=list(self.episode_hashes),
+                        episode_count=self.episode_count,episode_partial_saved=self.episode_partial_saved,
+                        partial_hashes=list(self.partial_hashes),
                         recent_hashes=self.recent_hashes,accepted_keys=list(self.accepted_keys)[-32:],episode_seen_at=self.episode_seen_at)
 
     def start(self):self.thread.start()
@@ -122,6 +136,11 @@ class SummaryWatcher:
                     self.drop_first=stamp;continue
                 if stamp-self.drop_first<POLICY.dropship_confirm_seconds:continue
             else:self.drop_first=None
+            if observation.get('kind') in ('loading','selection','dropship'):
+                # Keep the previous incomplete summary under its OLD cycle.
+                # In particular, do not upgrade a bootstrap key to the next game
+                # before its pending summary has been durably saved/validated.
+                self._preserve_loading()
             with self.cycle_lock:
                 mode='wildcard' if observation.get('profile') in ('wildcard-loading','wildcard-selection') else 'unknown'
                 event=self.cycle.observe_start(observation.get('kind'),observation.get('evidence'),mode)
@@ -129,6 +148,8 @@ class SummaryWatcher:
                 self.summary_missing_since=None;self.drop_first=None
                 self.first=self.best=None;self.matches=0
                 self.episode_key=None;self.episode_context=None;self.episode_hashes.clear();self.episode_count=0
+                self.header_gate=SummaryReadiness();self.loading_image=None;self.best_proof=None
+                self.episode_partial_saved=False;self.partial_hashes.clear()
                 self.emit('phase',self.phase())
                 self.emit('lifecycle',dict(event,entry_kind=event['kind'],kind='match_started',observation=observation))
                 self._status('已确认新局入场，等待总结页；相同数字也可分别记录')
@@ -137,22 +158,42 @@ class SummaryWatcher:
         if self.first is None:return
         image=self.best or self.first
         digest=image_digest(image)
-        if digest in self.episode_hashes or digest in self.recent_hashes:
-            self.first=self.best=None;return
+        upgrading=(digest in self.partial_hashes and (self.best_proof or {}).get('state')=='complete')
+        if not upgrading and (digest in self.episode_hashes or digest in self.recent_hashes):
+            self.first=self.best=None;self.best_proof=None;self.loading_image=None;return
         context=dict(self.episode_context or self.cycle.summary_context(),
                      episode_key=self.episode_key,source='automatic',observation_version=14)
+        if getattr(self.detector,'requires_header',False):
+            context['summary_readiness']=self.best_proof or dict(state='incomplete')
         if self.spool:
             payload=self.spool.preserve(image,self.session_id,context)
         elif not self.available.is_set():return
         else:payload=dict(image=image,**context)
         # Only after durable preservation can lifecycle advance.
         with self.cycle_lock:self.cycle.summary_preserved(context,provisional=True)
-        self.episode_hashes.add(digest);self.episode_count+=1
+        self.episode_hashes.add(digest)
+        if context.get('summary_readiness',{}).get('state')=='incomplete':
+            self.episode_partial_saved=True;self.partial_hashes.add(digest)
+        else:
+            self.episode_count+=1;self.partial_hashes.discard(digest)
         self.recent_hashes=(self.recent_hashes+[digest])[-32:]
-        self.episode_last=time.monotonic();self.first=self.best=None
+        self.partial_hashes.intersection_update(self.recent_hashes)
+        self.episode_last=(-100. if context.get('summary_readiness',{}).get('state')=='incomplete' else time.monotonic())
+        self.first=self.best=None;self.best_proof=None;self.loading_image=None
         self.available.clear()
         self.emit('phase',self.phase())
         self.emit('frame',payload)
+
+    def _preserve_loading(self):
+        """One incomplete fallback on departure/stop, never three early OCR jobs.
+
+        It cannot supply a calculated denominator. Recognition/admission still
+        requires the explicit displayed total, or a later human correction.
+        """
+        if self.loading_image is not None and self.episode_count==0 and not self.episode_partial_saved:
+            self.first=self.loading_image;self.best=None
+            self.best_proof=dict(state='incomplete',reason='left-before-header-stable')
+            self._flush()
 
     def _read(self):
         if self.capture is None:
@@ -179,6 +220,9 @@ class SummaryWatcher:
         image=self._read()
         if image is None:
             self._flush();self.probe_generation+=1
+            self.header_gate=SummaryReadiness()
+            self.misses+=1
+            if self.misses>=2:self._preserve_loading()
             if self.summary_missing_since is None:self.summary_missing_since=time.monotonic()
             self._expire_episode()
             self.drop_first=None
@@ -196,16 +240,27 @@ class SummaryWatcher:
                 self.episode_context=self.cycle.summary_context()
                 self.episode_hashes.clear();self.episode_count=0
                 self.episode_last=-100.
-            if self.episode_count<POLICY.max_episode_observations and (
+                self.header_gate=SummaryReadiness();self.loading_image=None
+                self.episode_partial_saved=False
+            requires_header=getattr(self.detector,'requires_header',False)
+            ready=not requires_header or self.header_gate.observe(found,time.monotonic())
+            if not ready:self.loading_image=image
+            if ready and self.episode_count<POLICY.max_episode_observations and (
                     time.monotonic()-self.episode_last>=POLICY.summary_retry_seconds):
                 if self.first is None:self.first=image;self.matches=0;self.score=-1.
                 confidence=found['confidence']
-                if confidence>=self.score-.01:self.best=image;self.score=max(confidence,self.score)
+                if confidence>=self.score-.01:
+                    self.best=image;self.score=max(confidence,self.score)
+                    self.best_proof=self.header_gate.evidence() if requires_header else None
                 self.matches+=1
                 if self.matches>=2:self._flush()
-            self._status('总结证据已保留，后台识别；等待下一局加载或选人')
+            self._status(('总结完整画面已保留，后台识别小队总击杀' if self.episode_count else
+                          '小队总击杀已显示稳定，正在保留完整画面') if ready else
+                         '总结正在加载：等待小队总击杀出现并稳定')
         else:
             self._flush();self.misses+=1;self.matches=0
+            self.header_gate=SummaryReadiness()
+            if self.misses>=2:self._preserve_loading()
             if self.summary_missing_since is None:self.summary_missing_since=time.monotonic()
             self._expire_episode()
         # Even a template-positive frame may be a false positive. Entry probes
@@ -218,8 +273,11 @@ class SummaryWatcher:
 
     def _expire_episode(self):
         if self.episode_key and self.summary_missing_since is not None and time.monotonic()-self.summary_missing_since>=POLICY.summary_gap_seconds:
+            self._preserve_loading()
             logging.info('Summary continuity expired episode=%s gap=%.2fs',self.episode_key,time.monotonic()-self.summary_missing_since)
             self.episode_key=None;self.episode_context=None;self.episode_hashes.clear();self.episode_count=0
+            self.header_gate=SummaryReadiness();self.loading_image=None
+            self.episode_partial_saved=False
             self.emit('phase',self.phase())
 
     def _run(self):
@@ -234,6 +292,6 @@ class SummaryWatcher:
     def stop(self):
         self.stop_event.set()
         if self.thread.ident is not None:self.thread.join(timeout=3)
-        if not self.thread.is_alive():self._flush()
+        if not self.thread.is_alive():self._flush();self._preserve_loading()
         if hasattr(self.source,'close'):self.source.close()
         return None

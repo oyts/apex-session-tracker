@@ -14,6 +14,11 @@ import numpy as np
 def surface_evidence(first, second):
     if first['result'].get('keep_separate') or second['result'].get('keep_separate'):
         return None
+    from .participation import squad_kills
+    if all(row['result'].get('summary_readiness',{}).get('state')!='incomplete' for row in (first,second)):
+        totals=[squad_kills(row['result'])[0] for row in (first,second)]
+        if None not in totals and totals[0]!=totals[1]:
+            return None  # Explicit different totals are not a cosmetic requeue change.
     try:
         with Image.open(first['image']) as a, Image.open(second['image']) as b:
             if a.size != b.size or a.width < 800 or a.width*a.height > 12_000_000:

@@ -24,11 +24,12 @@ class Store:
         self.screenshots.mkdir(exist_ok=True)
         self.db = sqlite3.connect(directory / "tracker.sqlite3")
         self.db.row_factory = sqlite3.Row
-        if self.db.execute('PRAGMA user_version').fetchone()[0] < 16 and self.db.execute(
+        if self.db.execute('PRAGMA user_version').fetchone()[0] < 17 and self.db.execute(
                 "SELECT 1 FROM sqlite_master WHERE name='captures'").fetchone():
             backups=directory/'backups';backups.mkdir(exist_ok=True)
             version=self.db.execute('PRAGMA user_version').fetchone()[0]
-            target=backups/('before-v14.sqlite3' if version<14 else 'before-schema15.sqlite3' if version<15 else 'before-schema16.sqlite3')
+            target=backups/('before-v14.sqlite3' if version<14 else 'before-schema15.sqlite3' if version<15 else
+                            'before-schema16.sqlite3' if version<16 else 'before-schema17.sqlite3')
             if not target.exists():
                 with closing(sqlite3.connect(target)) as backup:self.db.backup(backup)
         self.db.executescript("""
@@ -406,7 +407,28 @@ class Store:
                     for c in data.get('cards',[])) if capture['status']=='pending' else 0
         return (0 if manual else 1 if capture['status']=='confirmed' else
                 2 if data.get('manual_discarded') else 3 if capture['status']=='pending' else 4,
-                -manual if isinstance(manual,int) else 0,-quality,capture['id'])
+                -manual if isinstance(manual,int) else 0,
+                -int(data.get('summary_readiness',{}).get('state')=='complete'),-quality,capture['id'])
+
+    def promote_readiness(self,capture_id,context):
+        """Same exact pixels later observed stable: upgrade proof, not OCR/stats.
+
+        Called only after the exact image-hash lookup. An explicit different
+        match cannot upgrade it; an unknown return may prove the same pixels
+        stable without changing the original match or human attribution.
+        """
+        capture=self.capture(capture_id);data=capture['result']
+        if (context.get('summary_readiness',{}).get('state')!='complete' or
+                data.get('summary_readiness',{}).get('state')!='incomplete'):
+            return False
+        if context.get('match_key') and context['match_key']!=data.get('match_key'):
+            return False
+        data['summary_readiness']=context['summary_readiness']
+        with self.db:
+            self.db.execute('UPDATE captures SET result=? WHERE id=?',(json.dumps(data,ensure_ascii=False),capture_id))
+            self.db.execute('INSERT INTO reviews(capture_id,created,action,payload) VALUES (?,?,?,?)',
+                            (capture_id,now(),'readiness_upgraded',json.dumps(context['summary_readiness'])))
+        return True
 
     def find_duplicate(self, session_id, digest, result=None):
         hashes, groups = self.duplicate_index(session_id)
@@ -564,7 +586,7 @@ class Store:
     def update_recognition(self,capture_id,result):
         previous=self.capture(capture_id)['result']
         for key in ('source','manual_revision','keep_separate','manual_discarded','automatic_epoch','verified_match_group',
-                    'match_key','attribution','episode_key','observation_version','game_mode','visual_return'):
+                    'match_key','attribution','episode_key','observation_version','game_mode','visual_return','summary_readiness'):
             if key in previous: result[key]=previous[key]
         with self.db:
             self.db.execute('UPDATE captures SET result=? WHERE id=?',(json.dumps(result,ensure_ascii=False),capture_id))
@@ -594,6 +616,13 @@ class Store:
 
     def confirm(self, capture_id, rows, remember=False, allow_duplicate=False, manual=False, team_kills='unchanged'):
         capture = self.capture(capture_id)
+        from .participation import header_required
+        if not manual and header_required(capture['result']):
+            if capture['result'].get('summary_readiness',{}).get('state')=='incomplete':
+                raise ValueError('此候选未确认加载完整，请等待完整总结或手动核对。')
+            self.matches.sync(capture['session_id'])
+            if self.matches.team_kills(capture['match_id'])['team_kills'] is None:
+                raise ValueError('尚未明确读到总结页的小队总击杀，请等待完整总结或手动补充。')
         if team_kills!='unchanged':
             from .participation import valid_kills
             if not manual or team_kills not in (None,'automatic') and not valid_kills(team_kills):

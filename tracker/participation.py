@@ -7,10 +7,10 @@ def valid_kills(value):
 
 
 def squad_kills(result):
-    """Return a value and evidence, never substitute selected players' kills.
+    """Read the explicitly displayed squad total, never sum player cards.
 
     Old OCR payloads are supported without rewriting their lines or final stats.
-    Missing headers can use all THREE reliable cards; incomplete squads cannot.
+    A missing/uncertain header is unknown, including when all cards are readable.
     """
     headers = []
     lines = result.get('lines', [])
@@ -31,18 +31,22 @@ def squad_kills(result):
                       and abs(l.get('cy', -999)-line.get('cy', 0)) <= height*.8]
         if len(candidates) == 1:
             headers.append(int(candidates[0]['text']))
-    cards = result.get('cards', [])
-    complete = (len(cards) == 3 and len({c.get('card') for c in cards}) == 3
-                and all(valid_kills(c.get('kills')) and .94 <= c.get('score', 0) <= 1 for c in cards))
-    total = sum(c['kills'] for c in cards) if complete else None
     values = set(headers)
-    if len(values) > 1 or values and total is not None and next(iter(values)) != total:
+    if len(values) > 1:
         return None, 'conflict'
     if values:
         return next(iter(values)), 'summary-header'
-    if total is not None:
-        return total, 'three-complete-cards'
     return None, 'missing'
+
+
+def header_required(result):
+    """Real new recognition and existing captured observations need a header.
+
+    Unversioned legacy imports retain their personal-stat review workflow.
+    Already confirmed history is never unconfirmed by this admission rule.
+    """
+    return (result.get('team_kills_policy')=='summary-header-only' or
+            result.get('recognition_version',0)>0 and result.get('source') in ('automatic','manual'))
 
 
 def percentage(kills, assists, team_kills):

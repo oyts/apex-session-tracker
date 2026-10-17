@@ -1,5 +1,6 @@
 """Resolve a session roster, then replay pending matches in capture order."""
 from .ocr import auto_rows
+from .participation import header_required
 
 
 def reconcile(store, session_id, auto_save=True):
@@ -14,6 +15,10 @@ def reconcile(store, session_id, auto_save=True):
             continue
         result = store.capture(capture['id'])['result']
         if result.get('attribution')=='needs_review':
+            continue
+        if result.get('summary_readiness',{}).get('state')=='incomplete':
+            continue
+        if header_required(result) and store.matches.team_kills(capture['match_id'])['team_kills'] is None:
             continue
         rows = auto_rows(result, store, required, session_id)
         if rows:

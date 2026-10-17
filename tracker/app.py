@@ -119,7 +119,7 @@ class App:
         self.session_box = ttk.Combobox(toolbar, textvariable=self.session_var, state='readonly', width=32)
         self.session_box.pack(side='right')
         self.session_box.bind('<<ComboboxSelected>>', self.select_session)
-        self.wrapped_label(container, text='自动模式：打开小队总结页并停留约 1 秒；后台识别。也可用快捷键补录或导入截图。',
+        self.wrapped_label(container, text='自动模式：等待“小队总击杀”显示并稳定，收到捕获提示后即可离开；后台识别。也可用快捷键补录。',
                            style='Muted.TLabel').pack(fill='x', pady=(0, 14))
         automatic_bar = ttk.Frame(container)
         automatic_bar.pack(fill='x', pady=(0, 10))
@@ -192,7 +192,7 @@ class App:
         self.wrapped_label(container,textvariable=self.status,foreground=TEXT).pack(fill='x',pady=(12,6))
         footer=ttk.Frame(container)
         footer.pack(fill='x')
-        ttk.Label(footer,text='本地保存 · 本地识别 · v14-beta6',style='Muted.TLabel',font=('Microsoft YaHei UI',9)).pack(side='left')
+        ttk.Label(footer,text='本地保存 · 本地识别 · v14-beta7',style='Muted.TLabel',font=('Microsoft YaHei UI',9)).pack(side='left')
         ttk.Label(footer,text='非官方社区工具',style='Muted.TLabel',font=('Microsoft YaHei UI',9)).pack(side='right')
         self.wrapped_label(container,text='BUG 反馈与沟通：QQ 1050315764',foreground=MUTED,
                            font=('Microsoft YaHei UI',9)).pack(fill='x',pady=(6,0))
@@ -656,7 +656,7 @@ class App:
                 kind, payload = self.events.get_nowait()
                 if kind == "ready":
                     self.engine_ready = True
-                    text = "模型已就绪。开始记录后，打开总结页，自动捕获；也可用快捷键补录。" if self.automatic.get() else "模型已就绪。开始记录后，打开总结页并按截图快捷键。"
+                    text = "模型已就绪。开始记录后，等待总结页小队总击杀显示稳定，程序自动捕获；也可快捷键补录。" if self.automatic.get() else "模型已就绪。开始记录后，等待总结页加载完整再按截图快捷键。"
                     if self.store.active_session() and self.hotkey is None:
                         text += " 当前快捷键注册失败，请在设置中更换；仍可导入截图。"
                     self.status.set(text)
@@ -726,6 +726,8 @@ class App:
                     self.status.set('候选未通过文字校验，原图已保留（最近8张）；继续检测，可从本地候选目录导入补录。')
                 elif kind=='duplicate_evidence':
                     sid,cid,context=payload
+                    if self.store.promote_readiness(cid,context):
+                        self.reconcile_session(sid);self.refresh()
                     if self.watcher and self.store.active_session() and self.store.active_session()['id']==sid:
                         from .automatic import is_summary_result
                         if is_summary_result(self.store.capture(cid)['result']):self.watcher.accept_summary(context)
@@ -741,6 +743,8 @@ class App:
                     sid, path, digest, result = payload
                     duplicate = self.store.find_duplicate(sid, digest, result)
                     if duplicate:
+                        if self.store.promote_readiness(duplicate,result):
+                            self.reconcile_session(sid);self.refresh()
                         # Only remove this job's new file; preserve all original images.
                         candidate = Path(path).resolve()
                         if candidate.parent == self.store.screenshots.resolve() and candidate != Path(self.store.capture(duplicate)['image']).resolve():

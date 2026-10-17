@@ -16,6 +16,9 @@ class CapturePolicy:
     identity_score: float = .85
     summary_gap_seconds: float = 12.
     summary_return_seconds: float = 120.
+    summary_min_visible_seconds: float = 1.5
+    summary_header_stable_seconds: float = 1.
+    summary_header_mask_difference: float = .015
     dropship_confirm_seconds: float = 2.
 
 
@@ -77,6 +80,11 @@ class MatchCycle:
 def pending_reason(result, roster_resolved, rows_ready, auto_save=True):
     if result.get('attribution') == 'needs_review':
         return '未观察到新局开始：原图已保留，请确认属于新比赛还是已有比赛。'
+    if result.get('summary_readiness',{}).get('state')=='incomplete':
+        return '总结画面尚未确认加载完整：候选已保留，请打开完整总结或手动核对。'
+    from .participation import header_required, squad_kills
+    if header_required(result) and squad_kills(result)[0] is None:
+        return '尚未读到明确的小队总击杀：等待完整总结，或对照完整原图手动补充。'
     if not roster_resolved:
         return '等待跨局确定参与玩家；原图和识别结果已保存。'
     if not rows_ready:

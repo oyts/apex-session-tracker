@@ -40,6 +40,8 @@ def migrate(db):
             db.execute(f'ALTER TABLE matches ADD COLUMN {name} {definition}')
     rows=db.execute('SELECT * FROM captures ORDER BY id').fetchall()
     with db:
+        db.execute("UPDATE matches SET team_kills=NULL,team_kills_source='missing' "
+                   "WHERE team_kills_source='three-complete-cards' AND team_kills_reviewed=0")
         for row in rows:
             if row['match_id'] is not None: continue
             canonical=row['id']
@@ -62,7 +64,7 @@ def migrate(db):
             db.execute('UPDATE captures SET match_id=? WHERE id=?',(mid,row['id']))
             db.execute('INSERT INTO ocr_results(capture_id,created,version,payload) VALUES (?,?,?,?)',
                        (row['id'],row['created'],json.loads(row['result']).get('recognition_version',0),row['result']))
-        db.execute('PRAGMA user_version=16')
+        db.execute('PRAGMA user_version=17')
 
 
 class MatchRepository:
@@ -144,14 +146,14 @@ class MatchRepository:
         if match['team_kills_reviewed']:
             value,source=match['team_kills_override'],'manual'
         else:
-            evidence=[squad_kills(json.loads(r[0])) for r in self.db.execute(
+            payloads=[json.loads(r[0]) for r in self.db.execute(
                 'SELECT result FROM captures WHERE id=? OR merged_into=?',(canonical,canonical))]
+            complete=[p for p in payloads if p.get('summary_readiness',{}).get('state')=='complete']
+            evidence=[squad_kills(p) for p in (complete or payloads)]
             values={value for value,source in evidence if value is not None}
             conflict=any(source=='conflict' for value,source in evidence)
             value=next(iter(values)) if len(values)==1 and not conflict else None
-            source=('conflict' if len(values)>1 or conflict else
-                    'summary-header' if any(s=='summary-header' for v,s in evidence) else
-                    'three-complete-cards') if value is not None or conflict or len(values)>1 else 'missing'
+            source='conflict' if len(values)>1 or conflict else 'summary-header' if value is not None else 'missing'
         self.db.execute('UPDATE matches SET team_kills=?,team_kills_source=? WHERE id=?',(value,source,mid))
 
     def team_kills(self,mid):

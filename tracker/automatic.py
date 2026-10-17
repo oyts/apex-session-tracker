@@ -12,6 +12,7 @@ from PIL import Image
 
 
 class SummaryDetector:
+    requires_header=True
     def __init__(self):
         data = json.loads(Path(__file__).with_name('summary_templates.json').read_text('utf-8'))
         self.templates = {}
@@ -50,7 +51,8 @@ class SummaryDetector:
         height = round(image.height * 1000 / image.width)
         if height < 400 or height > 1000:
             return None
-        small = image.resize((1000, height), Image.Resampling.BILINEAR).convert('L')
+        rgb = image.resize((1000, height), Image.Resampling.BILINEAR).convert('RGB')
+        small=rgb.convert('L')
         # Tiny text's edge pixels change with native aspect/UI rasterization.
         # Smooth both sides lightly, retaining the same similarity thresholds.
         binary = cv2.GaussianBlur((np.asarray(small) > 110).astype(np.uint8)*255,(3,3),.65)
@@ -80,7 +82,21 @@ class SummaryDetector:
                     confidence = max(pair[2] for pair in pairs)
                     if best is None or confidence > best['confidence']:
                         best = {'confidence': confidence, 'labels': len(pairs)}
+        if best is not None:
+            best.update(self._header(binary,np.asarray(rgb),templates,height))
         return best
+
+    def _header(self,binary,rgb,templates,height):
+        band=binary[round(height*.125):round(height*.24),780:990]
+        caption=any(self._hits(band,template,.70) for name,variants in templates.items()
+                    if name.startswith('squad_kills_') for _,template in variants)
+        area=rgb[round(height*.13):round(height*.24),902:975].astype(np.int16)
+        # The squad total's yellow glyphs, below the green requeue panel and to
+        # the right of rank. No requirement that the number be nonzero.
+        mask=(area[:,:,0]>=150)&(area[:,:,1]>=95)&(area[:,:,2]<=125)&(area[:,:,0]>area[:,:,2]*1.35)
+        ys,xs=np.where(mask)
+        visible=bool(caption and len(xs)>=20 and ys.max()-ys.min()>=8) if len(xs) else False
+        return dict(header_visible=visible,header_mask=mask if visible else None)
 
 
 def is_summary_result(result):

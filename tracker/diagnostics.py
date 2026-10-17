@@ -116,6 +116,9 @@ def run_roster_smoke(output: Path):
                     item=data(names,[10,20,30])
                     for c,k in zip(item['cards'],(1,2,3) if index==0 else (10,5,5)):
                         c['kills']=k;c['assists']=(1 if index==0 else 2) if c['name']=='BoundPlayer' else 0
+                    # Explicit synthetic header; never derive the denominator
+                    # from these three individual kill fields.
+                    item['lines']=[dict(text='小队总击杀'+str(6 if index==0 else 20),score=.99,x=1700,y=180,cy=195)]
                     pcid=app.store.add_capture(participation_sid,'','participation-'+str(index),item)
                     if index==0:first_participation=pcid
                 app.reconcile_session(participation_sid)
@@ -126,6 +129,17 @@ def run_roster_smoke(output: Path):
                 assert app.store.totals(participation_sid)[1][0]['participation']==12/28
                 assert app.participation_labels[0]['text']=='42.9%'
                 app.store.end_session(participation_sid)
+                from .participation import squad_kills
+                from .summary_readiness import SummaryReadiness
+                from .automatic import SummaryDetector
+                import numpy as np
+                no_header=data(['OtherA','BoundPlayer','OtherB'],[10,20,30])
+                assert squad_kills(no_header)==(None,'missing')
+                no_header['lines']=[dict(text='小队总击杀9',score=.99,x=1700,cy=195)]
+                assert squad_kills(no_header)==(9,'summary-header')
+                gate=SummaryReadiness();found=dict(header_visible=True,header_mask=np.ones((10,10),dtype=bool))
+                assert not gate.observe(found,0) and gate.observe(found,1.5)
+                assert SummaryDetector.requires_header is True
                 report.update(ok=True, hidden_ui=True, ended_history_replayed=True,
                               card_positions_changed=True, games=2, damage=456, kills=1,
                               assists=0, average_damage=228, manual_stats_preserved=True,
@@ -134,7 +148,8 @@ def run_roster_smoke(output: Path):
                               monitor_follow=following, equal_numbers_distinct_images_counted=True,
                               equal_zero_games=2, verified_duplicate_handoff=True,
                               duplicate_original_stats_preserved=True, participation_weighted_and_correctable=True,
-                              participation_full_squad_in_solo=True,participation_ui='42.9%')
+                              participation_full_squad_in_solo=True,participation_ui='42.9%',
+                              card_sum_fallback_removed=True,waits_for_explicit_squad_header=True)
             finally:
                 app.close()
     except Exception as error:

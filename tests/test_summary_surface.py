@@ -39,6 +39,16 @@ def test_requeue_is_excluded_but_text_and_art_changes_are_not(tmp_path):
     assert surface_evidence(a,b) is None
 
 
+def test_two_explicit_different_squad_totals_are_not_cosmetic(tmp_path):
+    from tests.test_participation import header
+    a=picture(tmp_path/'a.png');b=picture(tmp_path/'b.png',True)
+    a['result']['lines']+=header(1)
+    b['result']['lines']+=header(2)
+    assert surface_evidence(a,b) is None
+    a['result']['summary_readiness']=dict(state='incomplete')
+    assert surface_evidence(a,b)  # A known incomplete early header may still finish loading.
+
+
 def test_return_converges_without_ocr_stat_matching_and_survives_reopen(tmp_path):
     store=Store(tmp_path/'db');sid=store.start_session(mode=3)
     a=picture(tmp_path/'a.png');b=picture(tmp_path/'b.png',True)

@@ -7,7 +7,7 @@ from pathlib import Path
 
 from PIL import Image, ImageOps
 
-RECOGNITION_VERSION = 8
+RECOGNITION_VERSION = 9
 
 
 def open_image(path):
@@ -262,9 +262,12 @@ class Recognizer:
         result={"cards": cards, "warnings": warnings,
                 "elapsed": round(time.perf_counter() - started, 3), "lines": lines,'recognition_version':RECOGNITION_VERSION}
         from .participation import squad_kills
+        result['team_kills_policy']='summary-header-only'
         result['team_kills'],result['team_kills_source']=squad_kills(result)
         if result['team_kills_source']=='conflict':
-            warnings.append('小队总击杀与三张完整卡片的击杀之和不一致，参团率待核对。')
+            warnings.append('小队总击杀出现多个互相矛盾的读数，需核对原图。')
+        elif result['team_kills'] is None:
+            warnings.append('未明确读到小队总击杀，请等待总结页加载完整或对照完整原图补充。')
         return result
 
 

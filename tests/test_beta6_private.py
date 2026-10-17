@@ -32,8 +32,10 @@ def test_latest_real_return_migration_manual_preservation_and_idempotence(tmp_pa
     assert store.capture(239)['merged_into']==238
     assert len(store.visible_captures(17))==9
     assert store.totals(17)[0]==9
-    assert [p['team_kills'] for p in store.totals(17)[1]]==[16]*3
-    assert [p['participation'] for p in store.totals(17)[1]]==[11/16,11/16,6/16]
+    # Beta7 deliberately invalidates the old card-derived denominator: one
+    # match never captured a readable total, so the overall rate is unknown.
+    assert [p['team_kills'] for p in store.totals(17)[1]]==[15]*3
+    assert all(p['participation_missing']==1 and p['participation'] is None for p in store.totals(17)[1])
     for cid,stats in original_stats.items():
         assert store.capture(cid)['stats']==stats
         assert store.capture(cid)['hash']==original_hashes[cid]
@@ -42,6 +44,6 @@ def test_latest_real_return_migration_manual_preservation_and_idempotence(tmp_pa
     reconcile(store,17);assert store.db.execute('SELECT count(*) FROM reviews').fetchone()[0]==review_count
     store.close();store=Store(tmp_path);reconcile(store,17)
     assert store.totals(17)==before and store.capture(252)['merged_into']==251
-    assert store.db.execute('PRAGMA user_version').fetchone()[0]==16
+    assert store.db.execute('PRAGMA user_version').fetchone()[0]==17
     assert (tmp_path/'backups/before-schema16.sqlite3').is_file()
     store.close()

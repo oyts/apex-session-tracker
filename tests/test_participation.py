@@ -18,13 +18,13 @@ def data(key,team,kills=(1,2,3),assists=(1,1,0)):
     return result
 
 
-def test_located_header_conflicts_and_complete_squad_fallback():
+def test_only_explicit_header_even_when_card_sum_differs():
     result=data('a',6)
     assert squad_kills(result)==(6,'summary-header')
     result['lines']=header(2)
-    assert squad_kills(result)==(None,'conflict')
+    assert squad_kills(result)==(2,'summary-header')
     result['lines']=[]
-    assert squad_kills(result)==(6,'three-complete-cards')
+    assert squad_kills(result)==(None,'missing')
     result['cards']=result['cards'][:2]
     assert squad_kills(result)==(None,'missing')
     result['lines']=header(20)
@@ -35,6 +35,8 @@ def test_located_header_conflicts_and_complete_squad_fallback():
     assert squad_kills(result)==(None,'missing')
     assert percentage(1,1,0) is None and percentage(0,0,6)==0
     assert percentage(5,3,6)==8/6  # retain the requested formula, never clamp.
+    result['lines']=header(2)+[dict(text='小队总击杀9',score=.99,x=1700,y=180,cy=197)]
+    assert squad_kills(result)==(None,'conflict')
 
 
 @pytest.mark.parametrize('mode',[1,2,3])

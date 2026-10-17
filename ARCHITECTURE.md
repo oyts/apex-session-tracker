@@ -142,3 +142,13 @@ Store按观测顺序只尝试前一个已归属总结到紧随其后的未归属
 `participation.squad_kills`只解读定位在数据卡上方的小队总击杀标签及右邻高置信整数；若头部未出现，可从全部三卡高置信击杀求和。只看到一／二卡、矛盾头部、多值矛盾均不能替代为选中玩家之和。MatchRepository在schema16维护`team_kills`、来源、人工覆盖值及覆盖标志；每次sync从canonical及其已证实副本归纳分母，冲突留空，人工作业优先。旧OCR的lines/cards也走相同规则，不篡改原OCR。
 
 个人MatchStats仍独立。总参团率为confirmed比赛个人Σ(kills+assists)/Σ(team_kills)；只要任一有效比赛分母未知，整体显示未知并给出缺失局数，而不是偷偷排除该比赛。完整零分母显示—，不截断超过100%的按公式结果。Review可独立修正或恢复自动分母；事件和SQLite事务保留依据。
+
+## Beta7：只读明确总击杀与加载就绪
+
+本节取代Beta6的三卡分母兜底。participation.squad_kills仅解析明确的“小队总击杀”标签与同列邻接高置信数字，或标签和数字合并行；不对个人击杀做求和／一致性校验。单局(personal kills+assists)/displayed squad kills；累计Σ(personal kills+assists)/Σ(displayed squad kills)。未读出／头部多值矛盾为空，不把缺失当0；合法0分母保留，百分比显示—。
+
+SummaryDetector除原总结模板，还在归一化1000像素画面右上横条匹配纯“小队总击杀”短标签，并检查其右侧黄色数字字形；不使用排队框、昵称或特定数字模板。SummaryReadiness要求总结可见至少1.5秒、标签与数字连续稳定至少1秒（前景掩码差异≤1.5%）；才选完整帧并写入原有耐久队列，之后完整OCR仍须读到标签数值。颜色／布局不匹配时保守等待，不从个人卡片推断。当前验证中文16:9与16:10。阈值集中在domain.CapturePolicy。
+
+等待阶段只保留一张最新候选图片内存，不提前锁定／计入。正常离开或停止时救存最多一张incomplete候选；该候选不自动确认，并为加载完成后的三次完整候选留出机会。同一比赛的complete候选优先参与最终头部分母归纳；人工覆盖优先。相同RGB后来通过稳定检查，可按同match_key／episode_key升级readiness并记审核，不伪造新OCR版本，不重复计数。场数／身份／去重仍独立，不按数据相同归并比赛。
+
+schema17一致备份后清除所有非人工three-complete-cards缓存，再从不可变旧OCR lines重算明确头部；既有confirmed个人stats不撤销，缺分母的累计百分比为未知。新真实识别与既有真实captured pending需明确分母才自动确认；unversioned旧导入保留其人工工作流。公共短词模板仅含UI标签字形，不包含用户昵称、账号、整图或角色装饰。
